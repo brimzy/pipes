@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+PACKAGE="com.nazcarbon.music"
+AVD="NazCarbon_API_36"
+
+build() {
+  cd "$ROOT"
+  gradle --no-daemon --console=plain :app:assembleDebug
+}
+
+start_emulator() {
+  if ! command -v emulator >/dev/null 2>&1; then
+    echo "Android emulator is missing from this dev shell." >&2
+    exit 1
+  fi
+  if ! adb devices | grep -q "emulator-"; then
+    AVD_HOME="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
+    AVD_DIR="$AVD_HOME/$AVD.avd"
+    if [ ! -f "$AVD_DIR/config.ini" ]; then
+      mkdir -p "$AVD_DIR" "$AVD_HOME"
+      cat > "$AVD_DIR/config.ini" <<EOF
+AvdId=$AVD
+avd.ini.displayname=NazCarbon Android API 36
+abi.type=x86_64
+hw.cpu.arch=x86_64
+hw.cpu.ncore=2
+hw.ramSize=2048
+hw.lcd.width=1080
+hw.lcd.height=1920
+hw.lcd.density=420
+hw.device.name=pixel_2
+hw.gpu.enabled=yes
+hw.gpu.mode=swiftshader_indirect
+tag.id=google_apis
+tag.display=Google APIs
+image.sysdir.1=$ANDROID_HOME/system-images/android-36/google_apis/x86_64/
+disk.dataPartition.size=2G
+fastboot.forceColdBoot=yes
+EOF
+      cat > "$AVD_HOME/$AVD.ini" <<EOF
+avd.ini.encoding=UTF-8
+path=$AVD_DIR
+EOF
+    fi
+    mkdir -p "$ROOT/.run"
+    nohup emulator -avd "$AVD" -no-window -no-audio -no-boot-anim \
+      -gpu swiftshader_indirect -no-snapshot -accel off \
+      >"$ROOT/.run/emulator.log" 2>&1 </dev/null &
+  fi
+  adb wait-for-device
+  until [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; do
+    sleep 2
+  done
+}
+
+case "${1:-}" in
+  build)
+    build
+    ;;
+  emulator)
+    start_emulator
+    adb devices -l
+    ;;
+  test)
+    build
+    if command -v waydroid >/dev/null 2>&1; then
+      if ! waydroid status 2>/dev/null | grep -q 'Container: RUNNING'; then
+        echo "Waydroid container is not running. Run: sudo systemctl start waydroid-container" >&2
+        exit 1
+      fi
+      if ! waydroid status 2>/dev/null | grep -q 'Session: RUNNING'; then
+        mkdir -p "$ROOT/.run"
+        nohup waydroid session start >"$ROOT/.run/waydroid-session.log" 2>&1 </dev/null &
+        sleep 5
+      fi
+      waydroid app install "$APK"
+      waydroid app launch "$PACKAGE"
+      echo "Launched $PACKAGE in local Waydroid."
+    else
+      start_emulator
+      adb install -r "$APK"
+      adb shell monkey -p "$PACKAGE" 1
+      echo "Launched $PACKAGE in the local Android emulator."
+    fi
+    ;;
+  lepton)
+    TARGET="${2:-${LEPTON_DEVICE:-frame:5555}}"
+    build
+    adb connect "$TARGET"
+    if ! adb -s "$TARGET" get-state >/dev/null 2>&1; then
+      echo "Lepton ADB is not responding at $TARGET. Start Lepton Development on the Steam Frame, enable Developer Mode, then retry." >&2
+      exit 1
+    fi
+    adb -s "$TARGET" install -r "$APK"
+    adb -s "$TARGET" shell monkey -p "$PACKAGE" 1
+    ;;
+  install)
+    adb wait-for-device
+    adb install -r "$APK"
+    adb shell monkey -p "$PACKAGE" 1
+    ;;
+  status)
+    adb devices -l
+    ;;
+  *)
+    echo "Usage: $0 {build|emulator|test|install|lepton [host:port]|status}" >&2
+    exit 2
+    ;;
+esac
