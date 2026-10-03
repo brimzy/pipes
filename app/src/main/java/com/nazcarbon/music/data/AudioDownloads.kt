@@ -31,6 +31,8 @@ data class AudioDownloadStatus(
 /** Keeps DownloadManager jobs and the app's category metadata in sync across app restarts. */
 object AudioDownloads {
     private const val PREF_KEY = "audio_downloads"
+    private const val CATEGORIES_PREF_KEY = "audio_download_categories"
+    const val DEFAULT_CATEGORY = "Unsorted"
     private val supportedTypes = mapOf(
         "flac" to "audio/flac",
         "wav" to "audio/wav",
@@ -53,6 +55,9 @@ object AudioDownloads {
         require(host != "youtube.com" && !host.endsWith(".youtube.com") && host != "youtu.be" && host != "music.youtube.com") {
             "YouTube Music offers compressed streams, not lossless audio downloads. Use a direct file link from a source that permits downloads."
         }
+        require(host != "spotify.com" && !host.endsWith(".spotify.com") && host != "spoti.fi") {
+            "Spotify links open in Spotify; Pipes can download direct audio files, not Spotify streams."
+        }
         val extension = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val mimeType = supportedTypes[extension]
         require(mimeType != null) { "Use a direct link ending in FLAC, WAV, MP3, M4A, AAC, OGG, OPUS, AIFF, or ALAC." }
@@ -72,6 +77,7 @@ object AudioDownloads {
         val cleanTitle = title.trim().ifBlank { uri.lastPathSegment?.substringBeforeLast('.') ?: "Audio download" }
         val cleanArtist = artist.trim().ifBlank { "Unknown artist" }
         val cleanCategory = category.trim().ifBlank { "Unsorted" }
+        require(cleanCategory.length <= 32) { "Category names can be up to 32 characters." }
         val extension = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val fileName = "${UUID.randomUUID()}.$extension"
         val request = DownloadManager.Request(uri)
@@ -114,6 +120,43 @@ object AudioDownloads {
             }
         }
         preferences.edit().putString(PREF_KEY, json.toString()).apply()
+    }
+
+    /** Restore saved empty categories as well as categories referenced by older downloads. */
+    fun loadCategories(preferences: SharedPreferences, downloads: List<AudioDownload>): List<String> {
+        val saved = runCatching {
+            val json = JSONArray(preferences.getString(CATEGORIES_PREF_KEY, "[]"))
+            (0 until json.length()).mapNotNull { json.optString(it).takeIf { value -> value.isNotBlank() } }
+        }.getOrDefault(emptyList())
+        return normalizedCategories(listOf(DEFAULT_CATEGORY) + saved + downloads.map { it.category })
+    }
+
+    /** Add a user category while keeping names unique without regard to letter case. */
+    fun addCategory(categories: List<String>, value: String): List<String> {
+        val name = value.trim()
+        require(name.isNotEmpty()) { "Enter a category name." }
+        require(name.length <= 32) { "Category names can be up to 32 characters." }
+        require(categories.none { it.equals(name, ignoreCase = true) }) { "That category already exists." }
+        return normalizedCategories(categories + name)
+    }
+
+    /** Category removal rehomes downloads so the files remain in the library. */
+    fun removeCategory(categories: List<String>, downloads: List<AudioDownload>, value: String): Pair<List<String>, List<AudioDownload>> {
+        require(!value.equals(DEFAULT_CATEGORY, ignoreCase = true)) { "Unsorted is the default category and can't be removed." }
+        return normalizedCategories(categories.filterNot { it.equals(value, ignoreCase = true) }) to
+            downloads.map { download ->
+                if (download.category.equals(value, ignoreCase = true)) download.copy(category = DEFAULT_CATEGORY) else download
+            }
+    }
+
+    fun saveCategories(preferences: SharedPreferences, categories: List<String>) {
+        val json = JSONArray().apply { normalizedCategories(categories).forEach { put(it) } }
+        preferences.edit().putString(CATEGORIES_PREF_KEY, json.toString()).apply()
+    }
+
+    private fun normalizedCategories(values: List<String>): List<String> {
+        val clean = values.map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+        return listOf(DEFAULT_CATEGORY) + clean.filterNot { it.equals(DEFAULT_CATEGORY, ignoreCase = true) }
     }
 
     fun status(manager: DownloadManager, id: Long): AudioDownloadStatus? = runCatching {
