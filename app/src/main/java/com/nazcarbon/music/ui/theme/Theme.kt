@@ -7,10 +7,10 @@ import androidx.compose.ui.graphics.Color
 
 private val PipesScheme = darkColorScheme(
     primary = Color(0xFF04D1F9),
-    onPrimary = Color(0xFF000000),
-    background = Color(0xFF000000),
-    surface = Color(0xFF101010),
-    surfaceVariant = Color(0xFF161616),
+    onPrimary = Color(0xFF090B0F),
+    background = Color(0xFF090B0F),
+    surface = Color(0xFF11161D),
+    surfaceVariant = Color(0xFF1B222C),
     onSurface = Color(0xFFF2F4F8),
     onSurfaceVariant = Color(0xFF9BA2A8),
     secondary = Color(0xFF3DDBD9),

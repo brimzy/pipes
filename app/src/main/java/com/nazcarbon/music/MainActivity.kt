@@ -1,10 +1,31 @@
 package com.nazcarbon.music
 
 import android.content.ComponentName
+import android.content.Intent
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.FolderOpen
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Close
+import androidx.media3.session.SessionCommand
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -46,6 +67,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.MusicTrack
 import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
@@ -60,9 +82,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 
-private val Carbon = Color(0xFF000000)
-private val Panel = Color(0xFF101010)
-private val Raised = Color(0xFF161616)
+private val Carbon = Color(0xFF090B0F)
+private val Panel = Color(0xFF11161D)
+private val Raised = Color(0xFF1B222C)
 private val Cyan = Color(0xFF04D1F9)
 private val Ink = Color(0xFFF2F4F8)
 private val Muted = Color(0xFF9BA2A8)
@@ -78,17 +100,22 @@ private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = fal
                 .setTitle(track.title)
                 .setArtist(track.artist)
                 .setArtworkUri(Uri.parse(track.thumbnailUrl))
-                .setExtras(Bundle().apply { putBoolean(RADIO_METADATA_KEY, radio) })
+                .setExtras(Bundle().apply { putBoolean(RADIO_METADATA_KEY, radio); putString("audio_quality", track.audioQuality); if (radio) putString("pipes_radio_session", java.util.UUID.randomUUID().toString()) })
                 .build(),
         )
         .build()
 
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : ComponentActivity() {
     private lateinit var source: NewPipeMusicSource
     private lateinit var controllerFuture: ListenableFuture<MediaController>
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         source = NewPipeMusicSource()
         source.initialize()
         controllerFuture = MediaController.Builder(
@@ -96,7 +123,7 @@ class MainActivity : ComponentActivity() {
             SessionToken(this, ComponentName(this, PlaybackService::class.java)),
         ).buildAsync()
         val prefs = getSharedPreferences("pipes", MODE_PRIVATE)
-        var searchJob: Job? = null
+        var playJob: Job? = null
         var queueJob: Job? = null
         var playbackRequest = 0
         var completedPlaybackRequest = 0
@@ -114,6 +141,7 @@ class MainActivity : ComponentActivity() {
                 var current by remember { mutableStateOf<MusicTrack?>(null) }
                 var isPlaying by remember { mutableStateOf(false) }
                 var loading by remember { mutableStateOf(false) }
+                var searchError by remember { mutableStateOf<String?>(null) }
                 var error by remember { mutableStateOf<String?>(null) }
                 var queueTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var playlists by remember { mutableStateOf(PlaylistStore.load(prefs)) }
@@ -121,6 +149,45 @@ class MainActivity : ComponentActivity() {
                 var radioLoading by remember { mutableStateOf(false) }
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
                 var notice by remember { mutableStateOf<String?>(null) }
+
+                var position by remember { mutableLongStateOf(0L) }
+                var duration by remember { mutableLongStateOf(0L) }
+                var buffering by remember { mutableStateOf(false) }
+                var shuffle by remember { mutableStateOf(false) }
+                var repeat by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
+                var seekable by remember { mutableStateOf(false) }
+                var audioQuality by remember { mutableStateOf("") }
+
+                LaunchedEffect(mediaPlayer) {
+                    val player = mediaPlayer ?: return@LaunchedEffect
+                    while (true) {
+                        position = player.currentPosition.coerceAtLeast(0)
+                        duration = player.duration.coerceAtLeast(0)
+                        seekable = player.isCurrentMediaItemSeekable
+                        radioLoading = player.sessionExtras.getBoolean("radio_loading")
+                        buffering = player.playbackState == Player.STATE_BUFFERING
+                        shuffle = player.shuffleModeEnabled
+                        repeat = player.repeatMode
+                        isPlaying = player.isPlaying
+                        val item = player.currentMediaItem
+                        if (item != null) {
+                            audioQuality = item.mediaMetadata.extras?.getString("audio_quality").orEmpty()
+                            current = knownTracks[item.mediaId] ?: MusicTrack(item.mediaId,
+                                item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
+                                0, item.mediaMetadata.artworkUri?.toString().orEmpty(), "", item.mediaId)
+                        }
+                        queueTracks = (0 until player.mediaItemCount).map { index ->
+                            val queued = player.getMediaItemAt(index)
+                            knownTracks[queued.mediaId] ?: MusicTrack(queued.mediaId,
+                                queued.mediaMetadata.title?.toString().orEmpty(), queued.mediaMetadata.artist?.toString().orEmpty(),
+                                0, queued.mediaMetadata.artworkUri?.toString().orEmpty(), "", queued.mediaId)
+                        }
+                        delay(300)
+                    }
+                }
+                BackHandler(page == "Now playing" || page == "Up next") {
+                    page = if (page == "Up next") "Now playing" else "Home"
+                }
 
                 DisposableEffect(mediaPlayer) {
                     val listener = object : Player.Listener {
@@ -168,19 +235,19 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val searchScope = rememberCoroutineScope()
+                val songSearch = remember {
+                    SongSearch(searchScope, { text -> withContext(Dispatchers.IO) { source.searchSongs(text) } }) { state ->
+                        results = state.tracks
+                        loading = state.loading
+                        searchError = state.error
+                        state.tracks.forEach { knownTracks[it.id] = it }
+                    }
+                }
                 fun search(text: String) {
                     query = text
-                    searchJob?.cancel()
-                    if (text.isBlank()) { results = emptyList(); error = null; loading = false; return }
-                    loading = true
-                    error = null
-                    searchJob = lifecycleScope.launch {
-                        delay(400)
-                        runCatching { withContext(Dispatchers.IO) { source.searchSongs(text) } }
-                            .onSuccess { found -> results = found; found.forEach { knownTracks[it.id] = it }; page = "Search" }
-                            .onFailure { error = it.message ?: "Search could not load. Try again." }
-                        loading = false
-                    }
+                    page = "Search"
+                    songSearch.submit(text)
                 }
 
                 fun play(track: MusicTrack, keepQueue: Boolean = false, radio: Boolean = false): Int {
@@ -193,14 +260,18 @@ class MainActivity : ComponentActivity() {
                     val request = playbackRequest
                     current = track
                     isPlaying = false
-                    error = "Loading ${track.title}…"
-                    lifecycleScope.launch {
+                    error = null
+                    buffering = true
+                    playJob?.cancel()
+                    playJob = lifecycleScope.launch {
                         runCatching {
-                            val resolved = withContext(Dispatchers.IO) { source.resolveAudio(track) }
+                            val resolved = if (track.pageUrl.startsWith("content://")) track.copy(streamUrl = track.pageUrl) else withContext(Dispatchers.IO) { source.resolveAudio(track) }
                             val activePlayer = withContext(Dispatchers.IO) { controllerFuture.get() }
-                            val item = musicItem(track, resolved.streamUrl, radio)
+                            val item = musicItem(resolved, resolved.streamUrl, radio)
                             withContext(Dispatchers.Main) {
                                 if (request != playbackRequest) return@withContext
+                                knownTracks[track.id] = resolved
+                                activePlayer.repeatMode = Player.REPEAT_MODE_OFF
                                 activePlayer.setMediaItem(item)
                                 activePlayer.prepare()
                                 activePlayer.play()
@@ -208,6 +279,8 @@ class MainActivity : ComponentActivity() {
                                 error = null
                             }
                         }.onFailure {
+                            if (it is CancellationException) throw it
+                            if (request != playbackRequest) return@onFailure
                             isPlaying = false
                             error = it.message ?: "Couldn't start this stream. Try another result."
                         }
@@ -217,65 +290,46 @@ class MainActivity : ComponentActivity() {
 
                 fun enqueue(seed: MusicTrack, candidates: List<MusicTrack>, radio: Boolean, request: Int) {
                     queueJob?.cancel()
-                    queueTracks = listOf(seed) + candidates
                     queueJob = lifecycleScope.launch {
                         try {
-                            val ready = mutableListOf<Pair<MusicTrack, String>>()
-                            candidates.take(12).forEach { candidate ->
-                                val resolved = runCatching {
-                                    withContext(Dispatchers.IO) { source.resolveAudio(candidate) }
-                                }.getOrNull()
-                                if (resolved != null) ready += candidate to resolved.streamUrl
-                            }
                             val activePlayer = withContext(Dispatchers.IO) { controllerFuture.get() }
-                            withTimeout(20_000) {
-                                while (completedPlaybackRequest != request || activePlayer.currentMediaItem?.mediaId != seed.id) delay(100)
+                            withTimeout(30_000) {
+                                while (completedPlaybackRequest != request) delay(100)
                             }
-                            if (request == playbackRequest && activePlayer.currentMediaItem?.mediaId == seed.id && ready.isNotEmpty()) {
-                                ready.forEach { (track, _) -> knownTracks[track.id] = track }
-                                activePlayer.addMediaItems(ready.map { (track, url) -> musicItem(track, url, radio) })
-                                queueTracks = listOf(seed) + ready.map { it.first }
+                            for (candidate in candidates.distinctBy { it.id }.filterNot { it.id == seed.id }.take(12)) {
+                                val resolved = try { if (candidate.pageUrl.startsWith("content://")) candidate.copy(streamUrl = candidate.pageUrl) else withContext(Dispatchers.IO) { source.resolveAudio(candidate) } }
+                                    catch (cancelled: CancellationException) { throw cancelled }
+                                    catch (_: Exception) { continue }
+                                if (request != playbackRequest) return@launch
+                                knownTracks[candidate.id] = resolved
+                                activePlayer.addMediaItem(musicItem(resolved, resolved.streamUrl, radio))
                             }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (failure: Throwable) {
-                            error = failure.message ?: "Couldn't prepare songs for this queue."
-                        } finally {
-                            radioLoading = false
-                        }
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { if (request == playbackRequest) error = "Couldn't prepare the queue. Try again." }
                     }
                 }
 
                 fun startRadio(track: MusicTrack) {
+                    if (track.pageUrl.startsWith("content://")) { notice = "Radio is available for online songs."; return }
+                    queueJob?.cancel()
                     radioSeed = track
-                    radioLoading = true
                     error = null
                     page = "Now playing"
-                    queueTracks = listOf(track)
-                    val request = play(track, keepQueue = true, radio = true)
-                    queueJob?.cancel()
-                    queueJob = lifecycleScope.launch {
-                        runCatching {
-                            val related = withContext(Dispatchers.IO) { source.relatedSongs(track) }
-                            val ranked = related
-                                .filterNot { it.id == track.id }
-                                .distinctBy { it.id }
-                                .sortedWith(
-                                    compareByDescending<MusicTrack> { candidate ->
-                                        (if (candidate.artist.lowercase() in likedArtists) 5 else 0) +
-                                            (if (candidate.artist.equals(track.artist, ignoreCase = true)) 1 else 0)
-                                    },
-                                )
-                            enqueue(track, ranked, radio = true, request)
-                        }.onFailure {
-                            radioLoading = false
-                            error = it.message ?: "Couldn't find songs related to this track."
-                        }
+                    playJob?.cancel()
+                    playbackRequest += 1
+                    val activePlayer = mediaPlayer
+                    if (activePlayer?.currentMediaItem?.mediaId == track.id) {
+                        // The service enables radio without resetting this item's position.
+                        activePlayer.sendCustomCommand(SessionCommand("pipes.start_radio", Bundle.EMPTY), Bundle.EMPTY)
+                    } else {
+                        play(track, keepQueue = true, radio = true)
                     }
+                    notice = "Radio started · songs will appear in Up next"
                 }
 
                 fun playSequence(track: MusicTrack, sequence: List<MusicTrack>, radio: Boolean = false) {
-                    val ordered = sequence.dropWhile { it.id != track.id }.ifEmpty { listOf(track) }
+                    if (!radio) radioSeed = null
+                    val ordered = sequence.distinctBy { it.id }.dropWhile { it.id != track.id }.ifEmpty { listOf(track) }
                     queueTracks = ordered
                     val request = play(track, keepQueue = true, radio = radio)
                     enqueue(track, ordered.drop(1), radio = radio, request)
@@ -306,17 +360,36 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun skipTrack(offset: Int) {
-                    val index = queueTracks.indexOfFirst { it.id == current?.id }
-                    val next = queueTracks.getOrNull(index + offset) ?: return
-                    if (offset > 0 && mediaPlayer?.hasNextMediaItem() == true) mediaPlayer?.seekToNextMediaItem()
-                    else if (offset < 0 && mediaPlayer?.hasPreviousMediaItem() == true) mediaPlayer?.seekToPreviousMediaItem()
-                    else play(next, keepQueue = true)
+                    mediaPlayer?.let { player ->
+                        if (offset < 0) player.seekToPrevious()
+                        else if (player.hasNextMediaItem()) player.seekToNextMediaItem()
+                    }
                 }
 
+                val openAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    if (uri != null) {
+                        runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        val name = runCatching {
+                            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                                if (cursor.moveToFirst()) cursor.getString(0) else null
+                            }
+                        }.getOrNull() ?: "Local audio"
+                        val track = MusicTrack(uri.toString(), name, "On this device", 0, "", uri.toString(), uri.toString(), "Original local audio")
+                        knownTracks[track.id] = track
+                        play(track)
+                        page = "Now playing"
+                    }
+                }
+
+                val snackbar = remember { SnackbarHostState() }
+                LaunchedEffect(error, notice) {
+                    (error ?: notice)?.let { snackbar.showSnackbar(it) }
+                }
                 Surface(Modifier.fillMaxSize(), color = Carbon) {
-                    Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            Header(query, ::search, page)
+                            if (page != "Now playing") Header(query, ::search, page) { openAudio.launch(arrayOf("audio/*")) }
                             if (page == "Now playing" && current != null) {
                                 NowPlaying(
                                     current!!,
@@ -328,6 +401,13 @@ class MainActivity : ComponentActivity() {
                                     { page = "Up next" },
                                     radioLoading,
                                     queueTracks.size,
+                                    position, duration, seekable, buffering, audioQuality,
+                                    { mediaPlayer?.seekTo(it) },
+                                    shuffle, { mediaPlayer?.shuffleModeEnabled = !shuffle },
+                                    repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
+                                    current!!.id in likedIds, { toggleLike(current!!) },
+                                    { page = "Home" }, { saveToCommute(current!!) },
+                                    mediaPlayer?.hasNextMediaItem() == true,
                                 )
                             } else when (page) {
                                 "Library" -> Library(
@@ -341,8 +421,13 @@ class MainActivity : ComponentActivity() {
                                     ::toggleLike,
                                     ::saveToCommute,
                                 )
-                                "Search" -> SearchResults(query, results, loading, error, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::saveToCommute)
-                                "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track -> playSequence(track, queueTracks.dropWhile { it.id != track.id }, radio = radioSeed != null) }, ::startRadio)
+                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::saveToCommute, { search(query) })
+                                "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track ->
+                                    mediaPlayer?.let { player ->
+                                        val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
+                                        if (index != null) { player.seekTo(index, 0L); player.play() }
+                                    }
+                                }, ::startRadio)
                                 "Playlist" -> {
                                     val playlist = playlists.firstOrNull { it.name == selectedPlaylist }
                                     if (playlist != null) PlaylistScreen(
@@ -357,11 +442,11 @@ class MainActivity : ComponentActivity() {
                                 "Explore" -> Explore(::search)
                                 else -> Home(::search)
                             }
-                            if (error != null && page != "Search") Text(error!!, color = Color(0xFFFF9D91), modifier = Modifier.padding(horizontal = 20.dp))
-                            if (notice != null) Text(notice!!, color = Cyan, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
                         }
-                        if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }) }
-                        BottomNav(page) { page = it }
+                        if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }, position, duration) }
+                        if (page != "Now playing") BottomNav(page) { page = it }
+                    }
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
                     }
                 }
             }
@@ -374,21 +459,25 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String) {
-    Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 14.dp)) {
+@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("PIPES", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
             Spacer(Modifier.width(8.dp))
             Text("MUSIC", color = Cyan, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.weight(1f))
-            Box(Modifier.size(5.dp).clip(CircleShape).background(Cyan))
+            IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Muted) }
         }
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = query,
             onValueChange = onSearch,
             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); onSearch(query) }),
+            trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Close, "Clear search") } },
             placeholder = { Text("Songs, artists, albums", color = Muted, fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
             shape = RoundedCornerShape(12.dp),
@@ -406,16 +495,16 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.height(6.dp))
             Text("Your music. Your mood. Your rules.", color = Muted, fontSize = 13.sp)
             Spacer(Modifier.height(22.dp))
-            Box(Modifier.fillMaxWidth().height(184.dp).clip(RoundedCornerShape(18.dp)).background(Raised).clickable { onSearch("indie pop") }) {
-                Column(Modifier.align(Alignment.CenterStart).padding(20.dp)) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF12353C), Panel))).clickable { onSearch("indie pop") }) {
+                Column(Modifier.padding(24.dp).padding(end = 40.dp)) {
                     Text("PIPES RADIO · 001", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                     Spacer(Modifier.height(10.dp))
                     Text("Your soft\nlanding.", color = Ink, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Text("Dreamy indie for wherever you're headed.", color = Muted, fontSize = 11.sp)
                 }
-                Box(Modifier.align(Alignment.CenterEnd).size(150.dp).padding(15.dp).clip(RoundedCornerShape(18.dp)).background(Color(0xFF101010)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.MusicNote, null, tint = Cyan, modifier = Modifier.size(70.dp))
+                Box(Modifier.align(Alignment.TopEnd).padding(16.dp).size(36.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.MusicNote, null, tint = Cyan, modifier = Modifier.size(30.dp))
                 }
             }
         }
@@ -429,13 +518,16 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit) {
+@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         when {
             loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(35.dp))
-            error != null -> Text(error, color = Color(0xFFFF9D91), modifier = Modifier.padding(20.dp))
-            tracks.isEmpty() -> Text("Search YouTube Music songs, artists, or albums.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+            error != null -> Column(Modifier.padding(20.dp)) {
+                Text(error, color = Muted)
+                TextButton(onClick = onRetry) { Text("Retry search") }
+            }
+            tracks.isEmpty() -> Text(if (query.isBlank()) "Search for your favorite songs and artists." else "No songs found. Try another title or artist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
                 items(tracks, key = { it.id }) { track -> TrackRow(track, current?.id == track.id && playing, liked.contains(track.id), onPlay, onLike, onRadio, onSave) }
             }
@@ -452,7 +544,7 @@ class MainActivity : ComponentActivity() {
             Text(track.title, color = if (active) Cyan else Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp)); Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp)
         }
-        IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (liked) Cyan else Muted) }
+        IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Muted) }
         Box {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More options", tint = Muted) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -554,7 +646,7 @@ class MainActivity : ComponentActivity() {
         )
         if (following.isEmpty()) {
             if (radioLoading) CircularProgressIndicator(color = Cyan, modifier = Modifier.padding(24.dp))
-            else Text("Start a radio station from any song to fill the queue.", color = Muted, modifier = Modifier.padding(20.dp))
+            else Text("No songs queued yet. Start radio or retry it from the player.", color = Muted, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
             items(following, key = { it.id }) { track ->
                 TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, {})
@@ -564,24 +656,35 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun Explore(onSearch: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().padding(20.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
         Text("Explore", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text("Go where the music takes you.", color = Muted, modifier = Modifier.padding(top = 5.dp, bottom = 20.dp))
-        listOf("Songs", "Artists", "Albums", "Playlists", "New & trending").forEachIndexed { index, label ->
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Raised).clickable { onSearch(if (index == 4) "new music" else "") }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+        listOf("Indie essentials", "R&B after dark", "Electronic", "Quiet focus", "New & trending").forEachIndexed { index, label ->
+            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Raised).clickable { onSearch(listOf("indie pop", "r&b", "electronic music", "ambient focus", "new music")[index]) }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(listOf("♫", "◉", "▣", "☷", "✳")[index], color = Cyan, fontSize = 20.sp); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Text("→", color = Muted)
             }
         }
     }
 }
 
-@Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp).clip(RoundedCornerShape(13.dp)).background(Raised).clickable(onClick = expand).padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(42.dp).clip(RoundedCornerShape(7.dp)), contentScale = ContentScale.Crop)
-        Spacer(Modifier.width(10.dp)); Column(Modifier.weight(1f)) { Text(track.title, color = Ink, maxLines = 1, fontWeight = FontWeight.SemiBold, fontSize = 12.sp); Text(track.artist, color = Muted, fontSize = 10.sp, maxLines = 1) }
-        Icon(if (liked) Icons.Default.Favorite else Icons.Default.MusicNote, null, tint = if (liked) Cyan else Muted, modifier = Modifier.padding(horizontal = 10.dp).size(17.dp))
-        IconButton(onClick = toggle) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = Ink) }
-        IconButton(onClick = next) { Icon(Icons.Default.SkipNext, null, tint = Ink) }
+@Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit, position: Long, duration: Long) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(Raised).clickable(onClick = expand)) {
+        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.15f)
+        Column {
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(track.thumbnailUrl, null, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentScale = ContentScale.Crop)
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(track.artist, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (liked) Icon(Icons.Default.Favorite, "Liked", tint = Cyan, modifier = Modifier.size(16.dp))
+                IconButton(onClick = toggle) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", tint = Ink) }
+                IconButton(onClick = next) { Icon(Icons.Default.SkipNext, "Next song", tint = Ink) }
+            }
+            LinearProgressIndicator(progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth().height(2.dp), color = Cyan, trackColor = Ink.copy(alpha = 0.08f))
+        }
     }
 }
 
@@ -595,29 +698,103 @@ class MainActivity : ComponentActivity() {
     onQueue: () -> Unit,
     radioLoading: Boolean,
     queueCount: Int,
+    position: Long,
+    duration: Long,
+    seekable: Boolean,
+    buffering: Boolean,
+    audioQuality: String,
+    onSeek: (Long) -> Unit,
+    shuffle: Boolean,
+    onShuffle: () -> Unit,
+    repeat: Int,
+    onRepeat: () -> Unit,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onClose: () -> Unit,
+    onSave: () -> Unit,
+    hasNext: Boolean,
 ) {
-    Column(Modifier.fillMaxSize().background(Carbon).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(20.dp)).background(Raised), contentScale = ContentScale.Crop)
-        Spacer(Modifier.height(26.dp)); Text(track.title, color = Ink, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1); Text(track.artist, color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp))
-        Spacer(Modifier.height(24.dp)); Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, null, tint = Muted, modifier = Modifier.size(34.dp)) }; Spacer(Modifier.width(18.dp)); FilledIconButton(onClick = toggle, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Cyan, contentColor = Carbon), modifier = Modifier.size(60.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, modifier = Modifier.size(30.dp)) }; Spacer(Modifier.width(18.dp)); IconButton(onClick = next) { Icon(Icons.Default.SkipNext, null, tint = Muted, modifier = Modifier.size(34.dp)) } }
-        Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onRadio, enabled = !radioLoading) {
-                Icon(Icons.Default.Radio, null, tint = Cyan)
-                Spacer(Modifier.width(8.dp))
-                Text(if (radioLoading) "Building radio…" else "Start radio")
+    var dragPosition by remember(track.id) { mutableStateOf<Float?>(null) }
+    val progress = dragPosition ?: position.toFloat()
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val compact = maxHeight < 700.dp
+        val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
+        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.28f)
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.35f), Carbon.copy(alpha = 0.80f), Carbon))))
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close player", tint = Ink) }
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("NOW PLAYING", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("Your music, in motion", color = Muted, fontSize = 11.sp)
+                }
+                IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
             }
-            OutlinedButton(onClick = onQueue) {
-                Icon(Icons.Default.QueueMusic, null, tint = Cyan)
-                Spacer(Modifier.width(8.dp))
-                Text("Up next · $queueCount")
+            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+            AsyncImage(track.thumbnailUrl, "Artwork for ${track.title}",
+                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Crop)
+            Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(track.title, color = Ink, fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                }
+                IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Ink) }
             }
+            Spacer(Modifier.height(10.dp))
+            Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
+                color = Cyan, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
+            Slider(
+                value = progress.coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
+                onValueChange = { dragPosition = it },
+                onValueChangeFinished = { dragPosition?.let { onSeek(it.toLong()) }; dragPosition = null },
+                valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
+                enabled = seekable && duration > 0,
+                colors = SliderDefaults.colors(thumbColor = Ink, activeTrackColor = Cyan, inactiveTrackColor = Ink.copy(alpha = 0.15f)),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(playbackTime(progress.toLong()), color = Muted, fontSize = 12.sp)
+                Text(if (duration > 0) playbackTime(duration) else "--:--", color = Muted, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Cyan else Muted) }
+                IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
+                FilledIconButton(onClick = toggle, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Ink, contentColor = Carbon), modifier = Modifier.size(68.dp)) {
+                    if (buffering) CircularProgressIndicator(Modifier.size(28.dp), color = Carbon, strokeWidth = 2.dp)
+                    else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", modifier = Modifier.size(34.dp))
+                }
+                IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
+                IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
+                    tint = if (repeat != Player.REPEAT_MODE_OFF) Cyan else Muted) }
+            }
+            Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.copy(alpha = 0.06f)), horizontalArrangement = Arrangement.SpaceEvenly) {
+                TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
+                    Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Radio")
+                }
+                TextButton(onClick = onQueue) {
+                    Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Queue · $queueCount")
+                }
+            }
+            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
         }
     }
 }
 
+private fun playbackTime(milliseconds: Long): String {
+    val seconds = milliseconds.coerceAtLeast(0) / 1000
+    return "%d:%02d".format(seconds / 60, seconds % 60)
+}
+
 @Composable private fun BottomNav(page: String, onSelect: (String) -> Unit) {
-    NavigationBar(containerColor = Panel, contentColor = Ink) {
+    NavigationBar(containerColor = Carbon, contentColor = Ink, windowInsets = WindowInsets(0, 0, 0, 0)) {
         listOf(Triple("Home", Icons.Default.Home, "Home"), Triple("Explore", Icons.Default.Explore, "Explore"), Triple("Library", Icons.Default.LibraryMusic, "Library")).forEach { (label, icon, target) ->
             NavigationBarItem(selected = page == target, onClick = { onSelect(target) }, icon = { Icon(icon, null) }, label = { Text(label, fontSize = 10.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Cyan, selectedTextColor = Cyan, indicatorColor = Raised, unselectedIconColor = Muted, unselectedTextColor = Muted))
         }

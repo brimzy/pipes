@@ -8,4 +8,5 @@ data class MusicTrack(
     val thumbnailUrl: String,
     val streamUrl: String,
     val pageUrl: String,
+    val audioQuality: String = "",
 )

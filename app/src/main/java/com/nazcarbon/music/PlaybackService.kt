@@ -14,6 +14,12 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
+import kotlinx.coroutines.CancellationException
 import com.nazcarbon.music.data.MusicTrack
 import com.nazcarbon.music.data.NewPipeMusicSource
 import kotlinx.coroutines.CoroutineScope
@@ -55,7 +61,29 @@ class PlaybackService : MediaSessionService() {
                 maybeExtendRadio(player)
             }
         })
-        mediaSession = MediaSession.Builder(this, player).build()
+        mediaSession = MediaSession.Builder(this, player).setCallback(object : MediaSession.Callback {
+            override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+                MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                        .add(SessionCommand("pipes.start_radio", Bundle.EMPTY)).build())
+                    .build()
+
+            override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
+                customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                if (customCommand.customAction != "pipes.start_radio") return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+                val current = player.currentMediaItem ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+                // Only metadata changes: retain the stream, position and paused/playing state.
+                val extras = Bundle(current.mediaMetadata.extras ?: Bundle.EMPTY).apply {
+                    putBoolean(RADIO_METADATA_KEY, true)
+                    putString("pipes_radio_session", java.util.UUID.randomUUID().toString())
+                }
+                player.removeMediaItems(player.currentMediaItemIndex + 1, player.mediaItemCount)
+                player.replaceMediaItem(player.currentMediaItemIndex, current.buildUpon()
+                    .setMediaMetadata(current.mediaMetadata.buildUpon().setExtras(extras).build()).build())
+                maybeExtendRadio(player)
+                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            }
+        }).build()
     }
 
     private fun maybeExtendRadio(player: Player) {
@@ -73,32 +101,46 @@ class PlaybackService : MediaSessionService() {
             streamUrl = current.localConfiguration?.uri?.toString().orEmpty(),
             pageUrl = current.mediaId,
         )
+        val radioSession = current.mediaMetadata.extras?.getString("pipes_radio_session")
         isRefillingRadio = true
+        mediaSession?.setSessionExtras(Bundle().apply { putBoolean("radio_loading", true) })
         serviceScope.launch {
             try {
                 val source = radioSource ?: return@launch
                 val related = withContext(Dispatchers.IO) { source.relatedSongs(seed) }
                 val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
                 val nextTracks = related.filterNot { it.id in existingIds }.take(6)
-                val playable = nextTracks.mapNotNull { track ->
-                    runCatching {
-                        val resolved = withContext(Dispatchers.IO) { source.resolveAudio(track) }
-                        track to resolved.streamUrl
-                    }.getOrNull()
+                for (track in nextTracks) {
+                    val resolved = try {
+                        withContext(Dispatchers.IO) { source.resolveAudio(track) }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { continue }
+                    val active = player.currentMediaItem?.mediaMetadata?.extras
+                    if (active?.getBoolean(RADIO_METADATA_KEY) != true || active.getString("pipes_radio_session") != radioSession) return@launch
+                    if ((0 until player.mediaItemCount).none { player.getMediaItemAt(it).mediaId == track.id }) {
+                        val ended = player.playbackState == Player.STATE_ENDED
+                        player.addMediaItem(radioItem(resolved, resolved.streamUrl, radioSession))
+                        if (ended && player.hasNextMediaItem()) {
+                            player.seekToNextMediaItem()
+                            player.prepare()
+                        }
+                    }
                 }
-                val fresh = playable.filterNot { (track, _) ->
-                    (0 until player.mediaItemCount).any { player.getMediaItemAt(it).mediaId == track.id }
-                }
-                if (fresh.isNotEmpty()) {
-                    player.addMediaItems(fresh.map { (track, url) -> radioItem(track, url) })
-                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Recommendation outages must never crash or interrupt the playing track.
             } finally {
                 isRefillingRadio = false
+                mediaSession?.setSessionExtras(Bundle().apply { putBoolean("radio_loading", false) })
+                if (player.currentMediaItem?.mediaMetadata?.extras?.getString("pipes_radio_session") != radioSession) {
+                    maybeExtendRadio(player)
+                }
             }
         }
     }
 
-    private fun radioItem(track: MusicTrack, url: String) =
+    private fun radioItem(track: MusicTrack, url: String, radioSession: String?) =
         MediaItem.Builder()
             .setMediaId(track.id)
             .setUri(Uri.parse(url))
@@ -107,7 +149,11 @@ class PlaybackService : MediaSessionService() {
                     .setTitle(track.title)
                     .setArtist(track.artist)
                     .setArtworkUri(Uri.parse(track.thumbnailUrl))
-                    .setExtras(Bundle().apply { putBoolean(RADIO_METADATA_KEY, true) })
+                    .setExtras(Bundle().apply {
+                        putBoolean(RADIO_METADATA_KEY, true)
+                        putString("pipes_radio_session", radioSession)
+                        putString("audio_quality", track.audioQuality)
+                    })
                     .build(),
             )
             .build()
