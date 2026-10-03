@@ -153,8 +153,10 @@ class MainActivity : ComponentActivity() {
                 var queueTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var playlists by remember { mutableStateOf(PlaylistStore.load(prefs)) }
                 var downloads by remember { mutableStateOf(AudioDownloads.load(prefs)) }
+                var downloadCategories by remember { mutableStateOf(AudioDownloads.loadCategories(prefs, downloads)) }
                 var downloadStatuses by remember { mutableStateOf<Map<Long, AudioDownloadStatus?>>(emptyMap()) }
                 var showDownloadDialog by remember { mutableStateOf(false) }
+                var showCategoryDialog by remember { mutableStateOf(false) }
                 var selectedPlaylist by remember { mutableStateOf<String?>(null) }
                 var radioLoading by remember { mutableStateOf(false) }
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
@@ -394,12 +396,43 @@ class MainActivity : ComponentActivity() {
                     }.onSuccess { download ->
                         downloads = listOf(download) + downloads
                         AudioDownloads.save(prefs, downloads)
+                        if (downloadCategories.none { it.equals(download.category, ignoreCase = true) }) {
+                            downloadCategories = AudioDownloads.addCategory(downloadCategories, download.category)
+                            AudioDownloads.saveCategories(prefs, downloadCategories)
+                        }
                         showDownloadDialog = false
                         downloadDialogError = null
                         notice = "Download added · ${download.category}"
                     }.onFailure { failure ->
                         downloadDialogError = failure.message ?: "Couldn't start this download. Check the link and try again."
                     }
+                }
+
+                fun addDownloadCategory(name: String): String? = runCatching {
+                    AudioDownloads.addCategory(downloadCategories, name).also { updated ->
+                        downloadCategories = updated
+                        AudioDownloads.saveCategories(prefs, updated)
+                    }
+                }.exceptionOrNull()?.message
+
+                fun removeDownloadCategory(name: String) {
+                    val movedCount = downloads.count { it.category.equals(name, ignoreCase = true) }
+                    val (updatedCategories, updatedDownloads) = AudioDownloads.removeCategory(downloadCategories, downloads, name)
+                    downloadCategories = updatedCategories
+                    downloads = updatedDownloads
+                    AudioDownloads.saveCategories(prefs, updatedCategories)
+                    AudioDownloads.save(prefs, updatedDownloads)
+                    notice = if (movedCount > 0) {
+                        "Category removed · downloads moved to Unsorted"
+                    } else "Category removed"
+                }
+
+                // Spotify search hands off to Spotify's official app or website; it does not extract a stream.
+                fun openOnSpotify(track: MusicTrack) {
+                    val search = Uri.encode("${track.title} ${track.artist}")
+                    runCatching {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$search")))
+                    }.onFailure { notice = "Couldn't open Spotify." }
                 }
 
                 fun playDownloaded(download: AudioDownload) {
@@ -493,12 +526,14 @@ class MainActivity : ComponentActivity() {
                                 ::toggleLike,
                                 ::saveToCommute,
                                 downloads,
+                                downloadCategories,
                                 downloadStatuses,
                                 { downloadDialogError = null; showDownloadDialog = true },
+                                { showCategoryDialog = true },
                                 ::playDownloaded,
                                 ::removeAudioDownload,
                                 )
-                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::saveToCommute, { search(query) })
+                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::saveToCommute, ::openOnSpotify, { search(query) })
                                 "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track ->
                                     mediaPlayer?.let { player ->
                                         val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
@@ -514,7 +549,7 @@ class MainActivity : ComponentActivity() {
                                         { track -> playSequence(track, playlist.tracks) },
                                         ::startRadio,
                                         ::saveToCommute,
-                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, ::playDownloaded, ::removeAudioDownload)
+                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload)
                                 }
                                 "Explore" -> Explore(::search)
                                 else -> Home(::search)
@@ -531,6 +566,14 @@ class MainActivity : ComponentActivity() {
                         error = downloadDialogError,
                         onDismiss = { showDownloadDialog = false; downloadDialogError = null },
                         onDownload = ::addAudioDownload,
+                    )
+                }
+                if (showCategoryDialog) {
+                    CategoryManagerDialog(
+                        categories = downloadCategories,
+                        onDismiss = { showCategoryDialog = false },
+                        onAdd = ::addDownloadCategory,
+                        onRemove = ::removeDownloadCategory,
                     )
                 }
             }
@@ -602,7 +645,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onRetry: () -> Unit) {
+@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         when {
@@ -613,13 +656,13 @@ class MainActivity : ComponentActivity() {
             }
             tracks.isEmpty() -> Text(if (query.isBlank()) "Search for your favorite songs and artists." else "No songs found. Try another title or artist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(tracks, key = { it.id }) { track -> TrackRow(track, current?.id == track.id && playing, liked.contains(track.id), onPlay, onLike, onRadio, onSave) }
+                items(tracks, key = { it.id }) { track -> TrackRow(track, current?.id == track.id && playing, liked.contains(track.id), onPlay, onLike, onRadio, onSave, onSpotify) }
             }
         }
     }
 }
 
-@Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit) {
+@Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: ((MusicTrack) -> Unit)? = null) {
     var menuOpen by remember(track.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable { onPlay(track) }.padding(horizontal = 20.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
@@ -632,6 +675,11 @@ class MainActivity : ComponentActivity() {
         Box {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More options", tint = Muted) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                if (onSpotify != null) DropdownMenuItem(
+                    text = { Text("Search on Spotify") },
+                    leadingIcon = { Icon(Icons.Default.MusicNote, null) },
+                    onClick = { menuOpen = false; onSpotify(track) },
+                )
                 DropdownMenuItem(
                     text = { Text("Start radio from song") },
                     leadingIcon = { Icon(Icons.Default.Radio, null) },
@@ -659,25 +707,33 @@ class MainActivity : ComponentActivity() {
     onLike: (MusicTrack) -> Unit,
     onSave: (MusicTrack) -> Unit,
     downloads: List<AudioDownload>,
+    downloadCategories: List<String>,
     downloadStatuses: Map<Long, AudioDownloadStatus?>,
     onAddDownload: () -> Unit,
+    onManageCategories: () -> Unit,
     onPlayDownload: (AudioDownload) -> Unit,
     onRemoveDownload: (AudioDownload) -> Unit,
 ) {
     var selectedCategory by remember { mutableStateOf("All") }
-    val categories = listOf("All") + downloads.map { it.category }.distinct().sorted()
-    val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category == selectedCategory }
+    val categories = listOf("All") + downloadCategories
+    LaunchedEffect(categories) {
+        if (selectedCategory !in categories) selectedCategory = "All"
+    }
+    val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
     Column(Modifier.fillMaxSize()) {
         Text("Your library", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
         Text("A collection built around you.", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
-        OutlinedButton(
-            onClick = onAddDownload,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan),
-        ) {
-            Icon(Icons.Default.MusicNote, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Download an audio file")
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan)) {
+                Icon(Icons.Default.MusicNote, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Download audio", maxLines = 1)
+            }
+            OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan)) {
+                Icon(Icons.Default.FolderOpen, null)
+                Spacer(Modifier.width(6.dp))
+                Text("Categories", maxLines = 1)
+            }
         }
         Text(
             "Use a direct HTTPS link to audio you own or are licensed to download. YouTube Music streams are compressed.",
@@ -741,6 +797,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+@Composable private fun CategoryManagerDialog(
+    categories: List<String>,
+    onDismiss: () -> Unit,
+    onAdd: (String) -> String?,
+    onRemove: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download categories") },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Create categories or remove them. Downloads in a removed category move to Unsorted; their files stay on your phone.", color = Muted, fontSize = 13.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(name, { name = it; error = null }, label = { Text("New category") }, singleLine = true, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        error = onAdd(name)
+                        if (error == null) name = ""
+                    }, enabled = name.isNotBlank()) { Text("Add") }
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                categories.forEach { category ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(category, color = Ink, modifier = Modifier.weight(1f))
+                        if (!category.equals(AudioDownloads.DEFAULT_CATEGORY, ignoreCase = true)) {
+                            IconButton(onClick = { onRemove(category) }) { Icon(Icons.Default.Delete, "Delete $category", tint = Muted) }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
 }
 
 @Composable private fun DownloadRow(
