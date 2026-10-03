@@ -2,6 +2,7 @@ package com.nazcarbon.music
 
 import android.content.ComponentName
 import android.content.Intent
+import android.app.DownloadManager
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.SystemBarStyle
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
@@ -25,11 +27,13 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.media3.session.SessionCommand
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -68,6 +72,9 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
+import com.nazcarbon.music.data.AudioDownload
+import com.nazcarbon.music.data.AudioDownloadStatus
+import com.nazcarbon.music.data.AudioDownloads
 import com.nazcarbon.music.data.MusicTrack
 import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
@@ -145,10 +152,14 @@ class MainActivity : ComponentActivity() {
                 var error by remember { mutableStateOf<String?>(null) }
                 var queueTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var playlists by remember { mutableStateOf(PlaylistStore.load(prefs)) }
+                var downloads by remember { mutableStateOf(AudioDownloads.load(prefs)) }
+                var downloadStatuses by remember { mutableStateOf<Map<Long, AudioDownloadStatus?>>(emptyMap()) }
+                var showDownloadDialog by remember { mutableStateOf(false) }
                 var selectedPlaylist by remember { mutableStateOf<String?>(null) }
                 var radioLoading by remember { mutableStateOf(false) }
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
                 var notice by remember { mutableStateOf<String?>(null) }
+                var downloadDialogError by remember { mutableStateOf<String?>(null) }
 
                 var position by remember { mutableLongStateOf(0L) }
                 var duration by remember { mutableLongStateOf(0L) }
@@ -157,6 +168,17 @@ class MainActivity : ComponentActivity() {
                 var repeat by remember { mutableIntStateOf(Player.REPEAT_MODE_OFF) }
                 var seekable by remember { mutableStateOf(false) }
                 var audioQuality by remember { mutableStateOf("") }
+                val downloadManager = remember { getSystemService(DownloadManager::class.java) }
+
+                // DownloadManager keeps transfers running if this screen is recreated or the app is backgrounded.
+                LaunchedEffect(downloads) {
+                    while (true) {
+                        downloadStatuses = withContext(Dispatchers.IO) {
+                            downloads.associate { download -> download.id to AudioDownloads.status(downloadManager, download.id) }
+                        }
+                        delay(900)
+                    }
+                }
 
                 LaunchedEffect(mediaPlayer) {
                     val player = mediaPlayer ?: return@LaunchedEffect
@@ -366,6 +388,56 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun addAudioDownload(url: String, title: String, artist: String, category: String) {
+                    runCatching {
+                        AudioDownloads.enqueue(this@MainActivity, downloadManager, url, title, artist, category)
+                    }.onSuccess { download ->
+                        downloads = listOf(download) + downloads
+                        AudioDownloads.save(prefs, downloads)
+                        showDownloadDialog = false
+                        downloadDialogError = null
+                        notice = "Download added · ${download.category}"
+                    }.onFailure { failure ->
+                        downloadDialogError = failure.message ?: "Couldn't start this download. Check the link and try again."
+                    }
+                }
+
+                fun playDownloaded(download: AudioDownload) {
+                    // Ask DownloadManager for its content URI so Android grants playback access to the saved file.
+                    val uri = downloadManager.getUriForDownloadedFile(download.id)
+                    if (uri == null) {
+                        notice = "This file is not ready yet."
+                        return
+                    }
+                    val track = MusicTrack(
+                        id = "download:${download.id}",
+                        title = download.title,
+                        artist = download.artist,
+                        durationSeconds = 0,
+                        thumbnailUrl = "",
+                        streamUrl = uri.toString(),
+                        pageUrl = uri.toString(),
+                        audioQuality = "Offline · ${download.category}",
+                    )
+                    knownTracks[track.id] = track
+                    play(track)
+                    page = "Now playing"
+                }
+
+                fun removeAudioDownload(download: AudioDownload) {
+                    // Stop playback before removing its backing file to avoid an invalid active media item.
+                    if (current?.id == "download:${download.id}") {
+                        mediaPlayer?.stop()
+                        mediaPlayer?.clearMediaItems()
+                        current = null
+                        isPlaying = false
+                    }
+                    downloadManager.remove(download.id)
+                    downloads = downloads.filterNot { it.id == download.id }
+                    AudioDownloads.save(prefs, downloads)
+                    notice = "Download removed"
+                }
+
                 val openAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     if (uri != null) {
                         runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -415,11 +487,16 @@ class MainActivity : ComponentActivity() {
                                     likedIds,
                                     playlists,
                                     current,
-                                    isPlaying,
-                                    { playlist -> selectedPlaylist = playlist.name; page = "Playlist" },
-                                    { track -> playSequence(track, likedIds.mapNotNull { knownTracks[it] }) },
-                                    ::toggleLike,
-                                    ::saveToCommute,
+                                isPlaying,
+                                { playlist -> selectedPlaylist = playlist.name; page = "Playlist" },
+                                { track -> playSequence(track, likedIds.mapNotNull { knownTracks[it] }) },
+                                ::toggleLike,
+                                ::saveToCommute,
+                                downloads,
+                                downloadStatuses,
+                                { downloadDialogError = null; showDownloadDialog = true },
+                                ::playDownloaded,
+                                ::removeAudioDownload,
                                 )
                                 "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::saveToCommute, { search(query) })
                                 "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track ->
@@ -437,7 +514,7 @@ class MainActivity : ComponentActivity() {
                                         { track -> playSequence(track, playlist.tracks) },
                                         ::startRadio,
                                         ::saveToCommute,
-                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute)
+                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, ::playDownloaded, ::removeAudioDownload)
                                 }
                                 "Explore" -> Explore(::search)
                                 else -> Home(::search)
@@ -448,6 +525,13 @@ class MainActivity : ComponentActivity() {
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
                     }
+                }
+                if (showDownloadDialog) {
+                    DownloadAudioDialog(
+                        error = downloadDialogError,
+                        onDismiss = { showDownloadDialog = false; downloadDialogError = null },
+                        onDownload = ::addAudioDownload,
+                    )
                 }
             }
         }
@@ -564,11 +648,68 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Library(tracks: List<MusicTrack>, likedIds: Set<String>, playlists: List<MusicPlaylist>, current: MusicTrack?, playing: Boolean, onOpenPlaylist: (MusicPlaylist) -> Unit, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit) {
+@Composable private fun Library(
+    tracks: List<MusicTrack>,
+    likedIds: Set<String>,
+    playlists: List<MusicPlaylist>,
+    current: MusicTrack?,
+    playing: Boolean,
+    onOpenPlaylist: (MusicPlaylist) -> Unit,
+    onPlay: (MusicTrack) -> Unit,
+    onLike: (MusicTrack) -> Unit,
+    onSave: (MusicTrack) -> Unit,
+    downloads: List<AudioDownload>,
+    downloadStatuses: Map<Long, AudioDownloadStatus?>,
+    onAddDownload: () -> Unit,
+    onPlayDownload: (AudioDownload) -> Unit,
+    onRemoveDownload: (AudioDownload) -> Unit,
+) {
+    var selectedCategory by remember { mutableStateOf("All") }
+    val categories = listOf("All") + downloads.map { it.category }.distinct().sorted()
+    val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category == selectedCategory }
     Column(Modifier.fillMaxSize()) {
         Text("Your library", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
         Text("A collection built around you.", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
+        OutlinedButton(
+            onClick = onAddDownload,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan),
+        ) {
+            Icon(Icons.Default.MusicNote, null)
+            Spacer(Modifier.width(8.dp))
+            Text("Download an audio file")
+        }
+        Text(
+            "Use a direct HTTPS link to audio you own or are licensed to download. YouTube Music streams are compressed.",
+            color = Muted,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+        )
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
+            item {
+                Text("DOWNLOADS · ${downloads.size}", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
+            }
+            if (categories.size > 1) item {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.forEach { category ->
+                        FilterChip(
+                            selected = selectedCategory == category,
+                            onClick = { selectedCategory = category },
+                            label = { Text(category) },
+                        )
+                    }
+                }
+            }
+            if (visibleDownloads.isEmpty()) item {
+                Text(
+                    if (downloads.isEmpty()) "Your downloaded audio will appear here, organized by category." else "No downloads in this category yet.",
+                    color = Muted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+            } else items(visibleDownloads, key = { "download:${it.id}" }) { download ->
+                DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
+            }
             item {
                 Text("PLAYLISTS", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
@@ -600,6 +741,85 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+@Composable private fun DownloadRow(
+    download: AudioDownload,
+    status: AudioDownloadStatus?,
+    onPlay: (AudioDownload) -> Unit,
+    onRemove: (AudioDownload) -> Unit,
+) {
+    val ready = status?.status == DownloadManager.STATUS_SUCCESSFUL
+    val inProgress = status?.status in setOf(
+        DownloadManager.STATUS_PENDING,
+        DownloadManager.STATUS_RUNNING,
+        DownloadManager.STATUS_PAUSED,
+    )
+    Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 7.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.MusicNote, null, tint = Cyan)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(download.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${download.artist} · ${download.category}", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    when {
+                        ready -> "Saved for offline listening · ${download.mimeType.substringAfter('/').uppercase()}"
+                        inProgress -> status?.progress?.let { "Downloading · ${(it * 100).toInt()}%" } ?: "Downloading…"
+                        status?.status == DownloadManager.STATUS_FAILED -> "Download failed · remove and retry"
+                        else -> "Checking download…"
+                    },
+                    color = if (ready) Cyan else Muted,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = { onPlay(download) }, enabled = ready) {
+                Icon(Icons.Default.PlayArrow, "Play offline", tint = if (ready) Ink else Muted.copy(alpha = 0.4f))
+            }
+            IconButton(onClick = { onRemove(download) }) {
+                Icon(Icons.Default.Delete, "Remove download", tint = Muted)
+            }
+        }
+        if (inProgress) {
+            val progress = status?.progress
+            if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp), color = Cyan)
+            else LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 6.dp), color = Cyan)
+        }
+    }
+}
+
+@Composable private fun DownloadAudioDialog(
+    error: String?,
+    onDismiss: () -> Unit,
+    onDownload: (String, String, String, String) -> Unit,
+) {
+    var url by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    var artist by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("Unsorted") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Download audio") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Add a direct HTTPS link to an audio file. FLAC and WAV keep the quality of the original file.", color = Muted, fontSize = 13.sp)
+                OutlinedTextField(url, { url = it }, label = { Text("Audio file URL") }, singleLine = true)
+                OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true)
+                OutlinedTextField(artist, { artist = it }, label = { Text("Artist") }, singleLine = true)
+                OutlinedTextField(category, { category = it }, label = { Text("Category") }, singleLine = true)
+                Text("Downloads are stored on this phone for offline playback. YouTube and YouTube Music links are stream links, not downloadable audio files.", color = Muted, fontSize = 12.sp)
+                if (error != null) Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onDownload(url, title, artist, category) }, enabled = url.isNotBlank()) { Text("Download") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable private fun PlaylistScreen(
