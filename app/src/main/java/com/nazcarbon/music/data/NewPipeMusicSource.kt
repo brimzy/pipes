@@ -514,7 +514,10 @@ class NewPipeMusicSource {
         queries.map { query -> async(Dispatchers.IO) { searchMusicAlbums(query, MAX_SEARCH_PAGES) } }
             .awaitAll().flatten()
             .filter { it.belongsTo(artist) }
-            .filter { item -> item.streamCount in 1..6 || item.name.contains("single", true) || item.name.contains("EP", true) }
+            .filter { item ->
+                item.streamCount in 1..6 || item.name.contains("single", true) ||
+                    Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(item.name)
+            }
             .map { item ->
                 ArtistRelease(
                     title = item.name,
