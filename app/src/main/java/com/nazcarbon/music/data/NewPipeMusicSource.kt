@@ -76,7 +76,7 @@ class NewPipeMusicSource {
                 if (!isSingleTab && !isAlbumTab) {
                     emptyList()
                 } else {
-                    collectPlaylistItems(tabExtractor, maxPages = if (isSingleTab) 6 else 3)
+                    collectPlaylistItems(tabExtractor, maxPages = 20)
                         // A channel tab is already scoped to this artist. Still reject
                         // entries explicitly attributed to another uploader.
                         .filter { item -> item.belongsTo(profile) || item.uploaderName.isNullOrBlank() }
@@ -94,19 +94,17 @@ class NewPipeMusicSource {
             }.getOrDefault(emptyList())
         }.distinctBy { it.url }
 
-        // Artist channel tabs can omit well-known singles or expose only a short
-        // first page. Supplement that tab with exact-owner Music Albums results.
+        // Channel tabs can be incomplete or unavailable. Merge them with the
+        // artist's album search results so partial tabs do not hide releases.
+        val searchedAlbums = runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
         val searchedSingles = runCatching { searchSingles(profile) }.getOrDefault(emptyList())
-        val releases = (searchedSingles + channelReleases).distinctBy { it.url }
-        val completeReleases = if (releases.isNotEmpty()) {
-            releases
-        } else {
-            runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
-        }
-        return ArtistDiscography(profile, completeReleases)
+        val releases = (channelReleases + searchedAlbums + searchedSingles)
+            .distinctBy { it.url }
+            .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
+        return ArtistDiscography(profile, releases)
     }
 
-    private fun collectPlaylistItems(extractor: ListExtractor<InfoItem>, maxPages: Int): List<PlaylistInfoItem> {
+    private fun collectPlaylistItems(extractor: ListExtractor<InfoItem>, maxPages: Int = 20): List<PlaylistInfoItem> {
         extractor.fetchPage()
         var page = extractor.initialPage
         val items = mutableListOf<PlaylistInfoItem>()
@@ -157,7 +155,7 @@ class NewPipeMusicSource {
             "",
         )
         val extractor = service.getSearchExtractor(handler)
-        return collectPlaylistItems(extractor, maxPages = 3)
+        return collectPlaylistItems(extractor, maxPages = 20)
             .filter { it.belongsTo(artist) }
             .filter { item -> item.streamCount in 1..6 || item.name.contains("single", true) || item.name.contains("EP", true) }
             .map { item ->
@@ -180,7 +178,7 @@ class NewPipeMusicSource {
             "",
         )
         val extractor = service.getSearchExtractor(handler)
-        return collectPlaylistItems(extractor, maxPages = 3)
+        return collectPlaylistItems(extractor, maxPages = 20)
             // Album search is global, so only retain releases with an exact artist
             // attribution. This avoids unrelated artists leaking into discography.
             .filter { it.belongsTo(artist) }
@@ -190,10 +188,15 @@ class NewPipeMusicSource {
                 url = item.url,
                 thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
                 trackCount = item.streamCount.coerceAtLeast(0),
-                kind = "Albums & singles",
+                kind = when {
+                    item.name.contains("single", true) -> "Single"
+                    item.name.contains("EP", true) || item.streamCount in 2..6 -> "EP"
+                    item.streamCount == 1L -> "Single"
+                    else -> "Album"
+                },
                 year = releaseYear(item.name),
             )
-        }.distinctBy { it.url }.take(30)
+        }.distinctBy { it.url }
     }
 
     fun resolveAudio(track: MusicTrack): MusicTrack {
