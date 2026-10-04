@@ -127,7 +127,7 @@ class NewPipeMusicSource {
     }
 
     private fun collectItems(
-        extractor: ListExtractor<InfoItem>,
+        extractor: ListExtractor<out InfoItem>,
         maxPages: Int = MAX_RELEASE_PAGES,
     ): List<InfoItem> {
         extractor.fetchPage()
@@ -142,7 +142,7 @@ class NewPipeMusicSource {
     }
 
     private fun collectPlaylistItems(
-        extractor: ListExtractor<InfoItem>,
+        extractor: ListExtractor<out InfoItem>,
         maxPages: Int = MAX_RELEASE_PAGES,
     ): List<PlaylistInfoItem> = collectItems(extractor, maxPages).filterIsInstance<PlaylistInfoItem>()
 
