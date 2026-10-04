@@ -13,6 +13,7 @@ data class ArtistRelease(
     val thumbnailUrl: String = "",
     val trackCount: Long = 0,
     val kind: String = "Release",
+    val year: Int? = null,
 )
 
 data class ArtistDiscography(

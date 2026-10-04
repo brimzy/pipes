@@ -59,6 +59,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -1246,48 +1247,102 @@ class MainActivity : ComponentActivity() {
     onRadio: () -> Unit,
     onOpenRelease: (ArtistRelease) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
+    val releases = remember(discography?.releases) { discography?.releases.orEmpty() }
+    val chronologicalReleases = remember(releases) {
+        releases.withIndex()
+            .sortedWith(compareByDescending<IndexedValue<ArtistRelease>> { it.value.year ?: Int.MIN_VALUE }.thenBy { it.index })
+            .map { it.value }
+    }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
         if (discography != null) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(discography.artist.thumbnailUrl, null, Modifier.size(82.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(discography.artist.name, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text("Artist discography", color = Muted, fontSize = 13.sp)
+            item(key = "artist-header") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AsyncImage(
+                        discography.artist.thumbnailUrl, null,
+                        Modifier.size(76.dp).clip(CircleShape).background(Raised),
+                        contentScale = ContentScale.Crop,
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(discography.artist.name, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text("Artist discography", color = Muted, fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    VinylArtistArt(releases.firstOrNull()?.thumbnailUrl.orEmpty(), Modifier.size(78.dp))
                 }
             }
-            TextButton(onClick = onRadio, modifier = Modifier.padding(horizontal = 12.dp)) {
-                Icon(Icons.Default.Radio, null, tint = Cyan)
-                Spacer(Modifier.width(8.dp))
-                Text("Artist radio", color = Cyan)
+            item(key = "artist-radio") {
+                TextButton(onClick = onRadio, modifier = Modifier.padding(start = 10.dp)) {
+                    Icon(Icons.Default.Radio, null, tint = Cyan)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Artist radio", color = Cyan)
+                }
             }
             if (discography.artist.description.isNotBlank()) {
-                Text(discography.artist.description, color = Muted, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+                item(key = "artist-description") {
+                    Text(discography.artist.description, color = Muted, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+                }
             }
         }
         when {
-            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
-            error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
-            discography == null || discography.releases.isEmpty() -> Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp))
+            loading -> item(key = "artist-loading") { CircularProgressIndicator(color = Cyan, modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
+            error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
+            discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
-                val sections = discography.releases.groupBy { releaseSection(it.kind) }
-                LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
-                    sections.forEach { (section, releases) ->
-                        item(key = "section:$section") {
-                            Text(section, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp))
+                item(key = "popular-releases-title") {
+                    Text("Albums & singles", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp))
+                }
+                item(key = "release-carousel") {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        items(releases, key = { "carousel:${it.url}" }) { release ->
+                            ArtistReleaseCard(release, onOpenRelease)
                         }
-                        items(releases, key = { it.url }) { release -> ArtistReleaseRow(release, onOpenRelease) }
                     }
                 }
+                item(key = "chronology-title") {
+                    Text("Chronological discography · newest first", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp))
+                }
+                items(chronologicalReleases, key = { "list:${it.url}" }) { release -> ArtistReleaseRow(release, onOpenRelease) }
             }
         }
     }
 }
 
-private fun releaseSection(kind: String): String = when {
-    kind.contains("single", ignoreCase = true) || kind.contains("ep", ignoreCase = true) -> "Singles & EPs"
-    kind.contains("album", ignoreCase = true) -> "Albums"
-    else -> kind.ifBlank { "Releases" }
+@Composable private fun VinylArtistArt(imageUrl: String, modifier: Modifier = Modifier) {
+    Box(modifier.clip(CircleShape).background(Color(0xFF090B0F)), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF232A34)), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF11161D)), contentAlignment = Alignment.Center) {
+                AsyncImage(imageUrl, null, Modifier.fillMaxSize(0.62f).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
+            }
+        }
+    }
+}
+
+@Composable private fun ArtistReleaseCard(release: ArtistRelease, onOpen: (ArtistRelease) -> Unit) {
+    Column(
+        Modifier.width(172.dp)
+            .shadow(12.dp, RoundedCornerShape(26.dp), clip = false)
+            .clip(RoundedCornerShape(26.dp))
+            .background(Panel)
+            .clickable { onOpen(release) },
+    ) {
+        AsyncImage(
+            release.thumbnailUrl, null,
+            Modifier.fillMaxWidth().height(172.dp).background(Raised),
+            contentScale = ContentScale.Crop,
+        )
+        Column(Modifier.padding(horizontal = 13.dp, vertical = 12.dp)) {
+            Text(release.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Text(listOfNotNull(release.year?.toString(), release.kind).joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
 @Composable private fun ArtistReleaseRow(release: ArtistRelease, onOpen: (ArtistRelease) -> Unit) {
@@ -1299,7 +1354,8 @@ private fun releaseSection(kind: String): String = when {
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(release.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(if (release.trackCount > 0) "${release.kind} · ${release.trackCount} tracks" else release.kind, color = Muted, fontSize = 12.sp)
+            val details = listOfNotNull(release.year?.toString(), release.kind, release.trackCount.takeIf { it > 0 }?.let { "$it tracks" })
+            Text(details.joinToString(" · "), color = Muted, fontSize = 12.sp)
         }
         Text("›", color = Cyan, fontSize = 26.sp)
     }
