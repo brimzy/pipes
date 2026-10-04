@@ -19,8 +19,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -98,13 +100,7 @@ class NewPipeMusicSource {
                     .plus(profile)
                     .distinctBy { it.url.canonicalChannelUrl() }
                 artistMatches.map { match -> async(Dispatchers.IO) {
-                    runCatching { loadYouTubeMusicArtistReleases(match) }
-                        .onFailure { error -> if (profile.name.contains("kendrick", true)) println("Artist catalog failed ${match.url}: ${error.message}") }
-                        .getOrDefault(emptyList()).also { found ->
-                        if (profile.name.contains("kendrick", true)) {
-                            println("Artist catalog ${match.url}: ${found.size} ${found.joinToString { it.title }}")
-                        }
-                    }
+                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList())
                 } }.awaitAll().flatten().distinctBy { it.url }
             }.getOrDefault(emptyList())
         }.await()
@@ -121,7 +117,13 @@ class NewPipeMusicSource {
             // the broader album search returns the same playlist URL.
             singles.await() + (albums?.await().orEmpty())
         }
-        val releases = (musicCatalog + searchedReleases)
+        val indexedAlbums = if (musicCatalog.none { it.kind == "Album" }) {
+            async(Dispatchers.IO) {
+                runCatching { loadMissingAlbumsFromMusicBrainz(profile, musicCatalog + searchedReleases) }
+                    .getOrDefault(emptyList())
+            }.await()
+        } else emptyList()
+        val releases = (indexedAlbums + musicCatalog + searchedReleases)
             .distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
         ArtistDiscography(profile, releases).also { result ->
@@ -148,30 +150,9 @@ class NewPipeMusicSource {
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
             .toMutableList()
-        val hasAlbumCarousel = carouselRenderers.any { shelf ->
-            val header = shelf.optJSONObject("header")
-            val basic = header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
-            val title = basic?.optJSONObject("title")?.let(::textFromRuns).orEmpty()
-            title.contains("album", true)
-        }
-        if (hasAlbumCarousel && shelves.none { it.title.contains("album", true) }) {
-            // Some artist pages show a non-linked Albums carousel but still expose
-            // the corresponding full list under this browse ID.
-            shelves += ArtistReleaseShelf("Albums", "MPAL$channelId", "")
-        }
-        if (artist.name.contains("kendrick", true)) {
-            val rawShelves = carouselRenderers.joinToString { shelf ->
-                val header = shelf.optJSONObject("header")
-                val basic = header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
-                val title = basic?.optJSONObject("title")
-                "${title?.let(::textFromRuns)} title=${title?.optJSONObject("navigationEndpoint")} button=${basic?.optJSONObject("moreContentButton")?.toString()?.take(300)}"
-            }
-            println("Artist shelves ${artist.url}: raw=${carouselRenderers.size}; ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}; raw=$rawShelves")
-        }
         return coroutineScope {
             shelves.map { shelf -> async(Dispatchers.IO) {
                 runCatching { loadArtistReleaseShelf(shelf, context) }
-                    .onFailure { error -> if (artist.name.contains("kendrick", true)) println("Shelf failed ${shelf.title}/${shelf.browseId}: ${error.message}") }
                     .getOrDefault(emptyList())
             } }.awaitAll().flatten().distinctBy { it.url }
         }
@@ -362,6 +343,81 @@ class NewPipeMusicSource {
     private fun findContinuation(root: JSONObject): String? =
         findJsonObjects(root, "nextContinuationData").firstOrNull()?.optString("continuation")
             ?.takeIf { it.isNotBlank() }
+
+    private data class MusicBrainzAlbum(val title: String, val year: Int?)
+
+    private suspend fun loadMissingAlbumsFromMusicBrainz(
+        artist: MusicArtist,
+        knownReleases: List<ArtistRelease>,
+    ): List<ArtistRelease> {
+        val encodedArtist = URLEncoder.encode("artist:\"${artist.name}\"", Charsets.UTF_8.name())
+        val artistSearch = musicBrainzGet("https://musicbrainz.org/ws/2/artist/?query=$encodedArtist&fmt=json&limit=10")
+        val artists = artistSearch.optJSONArray("artists") ?: return emptyList()
+        val targetArtist = (0 until artists.length()).mapNotNull(artists::optJSONObject)
+            .firstOrNull { it.optString("name").normalizedArtistName() == artist.name.normalizedArtistName() }
+            ?: return emptyList()
+        val artistId = targetArtist.optString("id")
+        if (artistId.isBlank()) return emptyList()
+
+        // MusicBrainz asks public clients to stay under one request per second.
+        delay(1_100)
+        val releaseGroups = musicBrainzGet(
+            "https://musicbrainz.org/ws/2/release-group/?artist=$artistId&fmt=json&limit=100&type=album",
+        ).optJSONArray("release-groups") ?: return emptyList()
+        val knownAlbumKeys = knownReleases.filter { it.kind == "Album" }.map { it.title.catalogKey() }.toSet()
+        val missingAlbums = (0 until releaseGroups.length()).mapNotNull { index ->
+            val group = releaseGroups.optJSONObject(index) ?: return@mapNotNull null
+            if (group.optString("primary-type") != "Album") return@mapNotNull null
+            val title = group.optString("title").trim()
+            val key = title.catalogKey()
+            if (title.isBlank() || key in knownAlbumKeys) return@mapNotNull null
+            MusicBrainzAlbum(title, group.optString("first-release-date").take(4).toIntOrNull())
+        }.distinctBy { it.title.catalogKey() }.take(20)
+
+        return coroutineScope {
+            missingAlbums.map { album -> async(Dispatchers.IO) {
+                runCatching {
+                    searchMusicAlbums("${artist.name} ${album.title}", maxPages = 1)
+                        .filter { it.belongsTo(artist) }
+                        .filter { it.name.isSameReleaseTitle(album.title) }
+                        .map { item ->
+                            ArtistRelease(
+                                title = item.name,
+                                url = item.url,
+                                thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                                trackCount = item.streamCount.coerceAtLeast(0),
+                                kind = "Album",
+                                year = album.year ?: releaseYear(item.name),
+                            )
+                        }
+                }.getOrDefault(emptyList())
+            } }.awaitAll().flatten().distinctBy { it.url }
+        }
+    }
+
+    private fun musicBrainzGet(url: String): JSONObject {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 12_000
+            readTimeout = 18_000
+            setRequestProperty("User-Agent", "PipesMusic/2.3 (https://github.com/brimzy/pipes)")
+            setRequestProperty("Accept", "application/json")
+        }
+        val status = connection.responseCode
+        val body = (if (status >= 400) connection.errorStream else connection.inputStream)
+            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+        connection.disconnect()
+        check(status in 200..299) { "MusicBrainz request failed with HTTP $status" }
+        return JSONObject(body)
+    }
+
+    private fun String.catalogKey(): String = lowercase().filter(Char::isLetterOrDigit)
+
+    private fun String.isSameReleaseTitle(expected: String): Boolean {
+        val actualKey = catalogKey()
+        val expectedKey = expected.catalogKey()
+        return actualKey == expectedKey ||
+            (expectedKey.length >= 5 && (actualKey.startsWith(expectedKey) || actualKey.contains(expectedKey)))
+    }
 
     private fun collectItems(
         extractor: ListExtractor<out InfoItem>,
