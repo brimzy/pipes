@@ -24,7 +24,7 @@ import java.util.concurrent.ConcurrentHashMap
 class NewPipeMusicSource {
     private companion object {
         const val MAX_RELEASE_PAGES = 100
-        const val MAX_SEARCH_PAGES = 2
+        const val MAX_SEARCH_PAGES = 3
         const val DISCOGRAPHY_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
     }
 
@@ -226,9 +226,10 @@ class NewPipeMusicSource {
         }.distinctBy { it.id }
     }
 
-    private fun searchSingles(artist: MusicArtist): List<ArtistRelease> {
+    private suspend fun searchSingles(artist: MusicArtist): List<ArtistRelease> = coroutineScope {
         val queries = listOf("${artist.name} singles", "${artist.name} EP")
-        return queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
+        queries.map { query -> async(Dispatchers.IO) { searchMusicAlbums(query, MAX_SEARCH_PAGES) } }
+            .awaitAll().flatten()
             .filter { it.belongsTo(artist) }
             .filter { item -> item.streamCount in 1..6 || item.name.contains("single", true) || item.name.contains("EP", true) }
             .map { item ->
@@ -244,15 +245,16 @@ class NewPipeMusicSource {
             .distinctBy { it.url }
     }
 
-    private fun searchAlbumReleases(artist: MusicArtist): List<ArtistRelease> {
+    private suspend fun searchAlbumReleases(artist: MusicArtist): List<ArtistRelease> = coroutineScope {
         val queries = listOf(
             "${artist.name} albums",
+            "${artist.name} discography",
+            "${artist.name} full albums",
         )
-        val results = queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
-        if (artist.name.contains("Kendrick", true)) {
-            println("Discography album search raw: ${results.joinToString { "${it.name} [${it.uploaderName}; ${it.uploaderUrl}]" }}")
-        }
-        return results
+        val results = queries.map { query -> async(Dispatchers.IO) {
+            searchMusicAlbums(query, MAX_SEARCH_PAGES)
+        } }.awaitAll().flatten()
+        results
             // Album search is global, so keep releases credited to this artist while
             // allowing featured/collaborating artists in the uploader attribution.
             .filter { it.belongsTo(artist) }
