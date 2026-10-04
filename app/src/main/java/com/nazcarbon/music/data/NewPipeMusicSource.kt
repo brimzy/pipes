@@ -248,7 +248,11 @@ class NewPipeMusicSource {
         val queries = listOf(
             "${artist.name} albums",
         )
-        return queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
+        val results = queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
+        if (artist.name.contains("Kendrick", true)) {
+            println("Discography album search raw: ${results.joinToString { "${it.name} [${it.uploaderName}; ${it.uploaderUrl}]" }}")
+        }
+        return results
             // Album search is global, so keep releases credited to this artist while
             // allowing featured/collaborating artists in the uploader attribution.
             .filter { it.belongsTo(artist) }
