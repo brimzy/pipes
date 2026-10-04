@@ -362,7 +362,7 @@ class NewPipeMusicSource {
         // MusicBrainz asks public clients to stay under one request per second.
         delay(1_100)
         val releaseGroups = musicBrainzGet(
-            "https://musicbrainz.org/ws/2/release-group/?artist=$artistId&fmt=json&limit=100&type=album",
+            "https://musicbrainz.org/ws/2/release-group/?query=${URLEncoder.encode("arid:$artistId AND primarytype:album", Charsets.UTF_8.name())}&fmt=json&limit=100",
         ).optJSONArray("release-groups") ?: return emptyList()
         val knownAlbumKeys = knownReleases.filter { it.kind == "Album" }.map { it.title.catalogKey() }.toSet()
         val missingAlbums = (0 until releaseGroups.length()).mapNotNull { index ->
@@ -384,7 +384,10 @@ class NewPipeMusicSource {
                 runCatching {
                     val expectedArtistName = artist.name.normalizedArtistName()
                     searchMusicAlbums("${artist.name} ${album.title}", maxPages = 2)
-                        .filter { it.uploaderName.orEmpty().normalizedArtistName() == expectedArtistName }
+                        .filter {
+                            it.uploaderName.orEmpty().normalizedArtistName() == expectedArtistName ||
+                                it.streamCount >= 8
+                        }
                         .filter { it.name.isSameReleaseTitle(album.title) }
                         .map { item ->
                             ArtistRelease(
