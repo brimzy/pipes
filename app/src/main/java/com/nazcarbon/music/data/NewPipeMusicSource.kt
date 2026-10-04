@@ -91,7 +91,15 @@ class NewPipeMusicSource {
 
         val profile = artist
         val musicCatalog = async(Dispatchers.IO) {
-            runCatching { loadYouTubeMusicArtistReleases(profile) }.getOrDefault(emptyList())
+            runCatching {
+                val artistMatches = searchArtists(profile.name)
+                    .filter { it.name.normalizedArtistName() == profile.name.normalizedArtistName() }
+                    .plus(profile)
+                    .distinctBy { it.url.canonicalChannelUrl() }
+                artistMatches.map { match -> async(Dispatchers.IO) {
+                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList())
+                } }.awaitAll().flatten().distinctBy { it.url }
+            }.getOrDefault(emptyList())
         }.await()
         // YouTube Music artist pages expose paginated Albums and Singles & EPs lists.
         // Search is a fallback for artists whose browse metadata is unavailable.
@@ -116,7 +124,7 @@ class NewPipeMusicSource {
 
     private data class ArtistReleaseShelf(val title: String, val browseId: String, val params: String)
 
-    private fun loadYouTubeMusicArtistReleases(artist: MusicArtist): List<ArtistRelease> {
+    private suspend fun loadYouTubeMusicArtistReleases(artist: MusicArtist): List<ArtistRelease> {
         val channelId = Regex("(?:channel/)?(UC[\\w-]{22})")
             .find(artist.url)?.groupValues?.get(1)
             ?: return emptyList()
@@ -129,9 +137,11 @@ class NewPipeMusicSource {
             .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
-        return shelves.flatMap { shelf ->
-            loadArtistReleaseShelf(shelf, context)
-        }.distinctBy { it.url }
+        return coroutineScope {
+            shelves.map { shelf -> async(Dispatchers.IO) {
+                runCatching { loadArtistReleaseShelf(shelf, context) }.getOrDefault(emptyList())
+            } }.awaitAll().flatten().distinctBy { it.url }
+        }
     }
 
     private fun JSONObject.toArtistReleaseShelf(): ArtistReleaseShelf? {
@@ -155,18 +165,20 @@ class NewPipeMusicSource {
             for (index in 0 until items.length()) {
                 val card = findJsonObject(items.optJSONObject(index) ?: continue, "musicTwoRowItemRenderer") ?: continue
                 val titleObject = card.optJSONObject("title") ?: continue
-                val title = textFromRuns(titleObject).ifBlank { continue }
+                val title = textFromRuns(titleObject)
+                if (title.isBlank()) continue
                 val browseId = titleObject.optJSONObject("navigationEndpoint")
                     ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
                 val playlistId = findPlaylistId(card)
                 val url = when {
                     playlistId.isNotBlank() -> "https://music.youtube.com/playlist?list=$playlistId"
                     browseId.isNotBlank() -> "https://music.youtube.com/browse/$browseId"
-                    else -> continue
+                    else -> ""
                 }
+                if (url.isBlank()) continue
                 val subtitle = card.optJSONObject("subtitle")?.let(::textFromRuns).orEmpty()
                 val kind = when {
-                    subtitle.contains("EP", true) -> "EP"
+                    Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(subtitle) -> "EP"
                     shelf.title.contains("single", true) -> "Single"
                     else -> "Album"
                 }
@@ -261,7 +273,8 @@ class NewPipeMusicSource {
     private fun textFromRuns(value: JSONObject): String =
         value.optJSONArray("runs")?.let { runs ->
             (0 until runs.length()).mapNotNull { runs.optJSONObject(it)?.optString("text") }.joinToString("")
-        }?.ifBlank { value.optString("simpleText") } ?: value.optString("simpleText")
+        }?.ifBlank { value.optString("simpleText", value.optString("text")) }
+            ?: value.optString("simpleText", value.optString("text"))
 
     private fun findPlaylistId(root: JSONObject): String {
         fun visit(value: Any?): String? {
