@@ -129,7 +129,9 @@ class NewPipeMusicSource {
     }
 
     private fun collectArtistTabReleases(artist: MusicArtist): List<ArtistRelease> {
-        val channel = service.getChannelExtractor(artist.url)
+        // Artist search returns youtube.com channel URLs, whose regular channel page
+        // omits YouTube Music Releases tabs. Request the music host to expose them.
+        val channel = service.getChannelExtractor(artist.url.asYouTubeMusicChannelUrl())
         channel.fetchPage()
         val debug = artist.name.contains("kendrick", true)
         if (debug) println("Discography tabs for ${artist.url}: ${channel.tabs.joinToString { "${it.url} ${it.contentFilters}" }}")
@@ -209,6 +211,11 @@ class NewPipeMusicSource {
         .removePrefix("http://www.")
         .removePrefix("https://")
         .removePrefix("http://")
+
+    private fun String.asYouTubeMusicChannelUrl(): String = replace(
+        Regex("^https?://(?:www\\.)?youtube\\.com", RegexOption.IGNORE_CASE),
+        "https://music.youtube.com",
+    )
 
     private fun releaseYear(title: String): Int? = Regex("\\b(19\\d{2}|20\\d{2})\\b")
         .find(title)?.value?.toIntOrNull()
