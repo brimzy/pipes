@@ -73,22 +73,43 @@ class NewPipeMusicSource {
                     emptyList()
                 } else {
                     tabExtractor.fetchPage()
-                    tabExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().map { item ->
+                    tabExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>()
+                        // A channel tab is already scoped to this artist. Still reject
+                        // entries explicitly attributed to another uploader.
+                        .filter { item -> item.belongsTo(profile) || item.uploaderName.isNullOrBlank() }
+                        .map { item ->
                         ArtistRelease(
                             title = item.name,
                             url = item.url,
                             thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
                             trackCount = item.streamCount.coerceAtLeast(0),
                             kind = tabName,
+                            year = releaseYear(item.name),
                         )
                     }
                 }
             }.getOrDefault(emptyList())
         }.distinctBy { it.url }
 
-        val fallbackReleases = if (releases.isNotEmpty()) releases else searchAlbumReleases(profile.name)
+        val fallbackReleases = if (releases.isNotEmpty()) releases else searchAlbumReleases(profile)
         return ArtistDiscography(profile, fallbackReleases)
     }
+
+    private fun PlaylistInfoItem.belongsTo(artist: MusicArtist): Boolean {
+        val artistUrl = artist.url.trimEnd('/').lowercase()
+        val uploaderUrl = uploaderUrl.orEmpty().trimEnd('/').lowercase()
+        val sameChannel = uploaderUrl.isNotBlank() && artistUrl.isNotBlank() && uploaderUrl == artistUrl
+        val sameArtistName = uploaderName.orEmpty().normalizedArtistName() == artist.name.normalizedArtistName()
+        return sameChannel || sameArtistName
+    }
+
+    private fun String.normalizedArtistName(): String = lowercase()
+        .trim()
+        .removeSuffix(" - topic")
+        .replace(Regex("\\s+"), " ")
+
+    private fun releaseYear(title: String): Int? = Regex("\\b(19\\d{2}|20\\d{2})\\b")
+        .find(title)?.value?.toIntOrNull()
 
     fun loadReleaseTracks(release: ArtistRelease, artistName: String): List<MusicTrack> {
         val extractor = service.getPlaylistExtractor(release.url)
@@ -106,21 +127,26 @@ class NewPipeMusicSource {
         }.distinctBy { it.id }
     }
 
-    private fun searchAlbumReleases(artistName: String): List<ArtistRelease> {
+    private fun searchAlbumReleases(artist: MusicArtist): List<ArtistRelease> {
         val handler = service.searchQHFactory.fromQuery(
-            artistName,
+            artist.name,
             listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS),
             "",
         )
         val extractor = service.getSearchExtractor(handler)
         extractor.fetchPage()
-        return extractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().map { item ->
+        return extractor.initialPage.items.filterIsInstance<PlaylistInfoItem>()
+            // Album search is global, so only retain releases with an exact artist
+            // attribution. This avoids unrelated artists leaking into discography.
+            .filter { it.belongsTo(artist) }
+            .map { item ->
             ArtistRelease(
                 title = item.name,
                 url = item.url,
                 thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
                 trackCount = item.streamCount.coerceAtLeast(0),
                 kind = "Albums & singles",
+                year = releaseYear(item.name),
             )
         }.distinctBy { it.url }.take(30)
     }
