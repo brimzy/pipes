@@ -14,14 +14,23 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
 
 /** NewPipe's extractor uses a pluggable Downloader. Keep blocking network work off the UI thread. */
 class NewPipeMusicSource {
     private companion object {
         const val MAX_RELEASE_PAGES = 100
+        const val MAX_SEARCH_PAGES = 2
+        const val DISCOGRAPHY_CACHE_TTL_MS = 6 * 60 * 60 * 1000L
     }
 
     private val service: StreamingService by lazy { NewPipe.getService("YouTube") }
+    private val discographyCache = ConcurrentHashMap<String, CachedDiscography>()
+
+    private data class CachedDiscography(
+        val loadedAtMillis: Long,
+        val value: ArtistDiscography,
+    )
 
     fun initialize() {
         NewPipe.init(AndroidDownloader())
@@ -64,6 +73,12 @@ class NewPipeMusicSource {
 
     /** Artist tabs provide album and single playlists; load only their summaries here. */
     fun loadArtistDiscography(artist: MusicArtist): ArtistDiscography {
+        val cacheKey = artist.url.canonicalChannelUrl()
+        val now = System.currentTimeMillis()
+        discographyCache[cacheKey]
+            ?.takeIf { now - it.loadedAtMillis < DISCOGRAPHY_CACHE_TTL_MS }
+            ?.let { return it.value }
+
         val channel = service.getChannelExtractor(artist.url)
         channel.fetchPage()
         val profile = artist.copy(
@@ -104,23 +119,35 @@ class NewPipeMusicSource {
         val releases = (channelReleases + searchedAlbums + searchedSingles)
             .distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
-        return ArtistDiscography(profile, releases)
+        return ArtistDiscography(profile, releases).also { result ->
+            if (releases.isNotEmpty()) {
+                discographyCache[cacheKey] = CachedDiscography(now, result)
+            }
+        }
     }
 
-    private fun collectPlaylistItems(
+    private fun collectItems(
         extractor: ListExtractor<InfoItem>,
         maxPages: Int = MAX_RELEASE_PAGES,
-    ): List<PlaylistInfoItem> {
+    ): List<InfoItem> {
         extractor.fetchPage()
         var page = extractor.initialPage
-        val items = mutableListOf<PlaylistInfoItem>()
+        val items = mutableListOf<InfoItem>()
         repeat(maxPages) {
-            items += page.items.filterIsInstance<PlaylistInfoItem>()
+            items += page.items
             if (!page.hasNextPage()) return items
             page = runCatching { extractor.getPage(page.nextPage) }.getOrNull() ?: return items
         }
         return items
     }
+
+    private fun collectPlaylistItems(
+        extractor: ListExtractor<InfoItem>,
+        maxPages: Int = MAX_RELEASE_PAGES,
+    ): List<PlaylistInfoItem> = collectItems(extractor, maxPages).filterIsInstance<PlaylistInfoItem>()
+
+    private fun collectStreamItems(extractor: ListExtractor<InfoItem>): List<StreamInfoItem> =
+        collectItems(extractor, MAX_RELEASE_PAGES).filterIsInstance<StreamInfoItem>()
 
     private fun PlaylistInfoItem.belongsTo(artist: MusicArtist): Boolean {
         val artistUrl = artist.url.canonicalChannelUrl()
@@ -163,8 +190,7 @@ class NewPipeMusicSource {
 
     fun loadReleaseTracks(release: ArtistRelease, artistName: String): List<MusicTrack> {
         val extractor = service.getPlaylistExtractor(release.url)
-        extractor.fetchPage()
-        return extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { item ->
+        return collectStreamItems(extractor).map { item ->
             MusicTrack(
                 id = item.url,
                 title = item.name,
@@ -179,7 +205,7 @@ class NewPipeMusicSource {
 
     private fun searchSingles(artist: MusicArtist): List<ArtistRelease> {
         val queries = listOf("${artist.name} singles", "${artist.name} EP")
-        return queries.flatMap { query -> searchMusicAlbums(query) }
+        return queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
             .filter { it.belongsTo(artist) }
             .filter { item -> item.streamCount in 1..6 || item.name.contains("single", true) || item.name.contains("EP", true) }
             .map { item ->
@@ -197,11 +223,9 @@ class NewPipeMusicSource {
 
     private fun searchAlbumReleases(artist: MusicArtist): List<ArtistRelease> {
         val queries = listOf(
-            artist.name,
             "${artist.name} albums",
-            "${artist.name} discography",
         )
-        return queries.flatMap { query -> searchMusicAlbums(query) }
+        return queries.flatMap { query -> searchMusicAlbums(query, MAX_SEARCH_PAGES) }
             // Album search is global, so keep releases credited to this artist while
             // allowing featured/collaborating artists in the uploader attribution.
             .filter { it.belongsTo(artist) }
@@ -217,13 +241,13 @@ class NewPipeMusicSource {
         }.distinctBy { it.url }
     }
 
-    private fun searchMusicAlbums(query: String): List<PlaylistInfoItem> {
+    private fun searchMusicAlbums(query: String, maxPages: Int): List<PlaylistInfoItem> {
         val handler = service.searchQHFactory.fromQuery(
             query,
             listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS),
             "",
         )
-        return collectPlaylistItems(service.getSearchExtractor(handler))
+        return collectPlaylistItems(service.getSearchExtractor(handler), maxPages)
     }
 
     fun resolveAudio(track: MusicTrack): MusicTrack {
