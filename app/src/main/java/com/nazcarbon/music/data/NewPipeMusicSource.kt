@@ -489,7 +489,7 @@ class NewPipeMusicSource {
 
     private fun releaseKind(title: String, trackCount: Long, fromSinglesTab: Boolean = false): String = when {
         title.contains("single", true) -> "Single"
-        title.contains("EP", true) || trackCount in 2..6 -> "EP"
+        Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(title) || trackCount in 2..6 -> "EP"
         trackCount == 1L || fromSinglesTab -> "Single"
         else -> "Album"
     }

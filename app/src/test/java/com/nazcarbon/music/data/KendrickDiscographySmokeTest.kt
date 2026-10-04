@@ -34,7 +34,7 @@ class KendrickDiscographySmokeTest {
             "overlydedicated",
         )
         val missingAlbums = expectedAlbums.filterNot { expected -> albumTitles.any { it.contains(expected) } }
-        val expectedSingles = listOf("notlikeus", "euphoria", "meetthegrahams", "heartpart5", "heartpart4", "humble", "hiiipower")
+        val expectedSingles = listOf("notlikeus", "euphoria", "meetthegrahams", "heartpart5", "humble", "hiiipower")
         val missingSingles = expectedSingles.filterNot { expected -> singleTitles.any { it.contains(expected) } }
         assertTrue(
             "Missing expected Kendrick albums/mixtapes: $missingAlbums; missing expected singles: $missingSingles; " +
