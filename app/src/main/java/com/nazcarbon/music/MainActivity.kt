@@ -60,6 +60,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -1340,7 +1341,7 @@ class MainActivity : ComponentActivity() {
     val hovered by interactionSource.collectIsHoveredAsState()
     var held by remember(release.url) { mutableStateOf(false) }
     val flipped = hovered || held
-    val rotationY by androidx.compose.animation.core.animateFloatAsState(
+    val flipAngle by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (flipped) 180f else 0f,
         animationSpec = androidx.compose.animation.core.tween(420),
         label = "album-flip",
@@ -1400,7 +1401,7 @@ class MainActivity : ComponentActivity() {
                     .align(Alignment.Center)
                     .offset(x = (-11).dp, y = -(floatHeight + idleFloat).dp)
                     .graphicsLayer {
-                        rotationY = rotationY
+                        rotationY = flipAngle
                         rotationZ = tilt - (floatHeight + idleFloat) * 0.08f
                         scaleX = scale
                         scaleY = scale
@@ -1410,7 +1411,7 @@ class MainActivity : ComponentActivity() {
                     .clip(albumShape)
                     .background(Raised),
             ) {
-                if (rotationY < 90f) {
+                if (flipAngle < 90f) {
                     AsyncImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                 } else {
                     Column(
