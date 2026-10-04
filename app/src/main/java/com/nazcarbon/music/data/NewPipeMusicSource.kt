@@ -378,7 +378,8 @@ class NewPipeMusicSource {
             missingAlbums.map { album -> async(Dispatchers.IO) {
                 runCatching {
                     searchMusicAlbums("${artist.name} ${album.title}", maxPages = 1)
-                        .filter { it.belongsTo(artist) }
+                        // The exact indexed title disambiguates these targeted searches;
+                        // uploader attribution can differ for legacy artist channels.
                         .filter { it.name.isSameReleaseTitle(album.title) }
                         .map { item ->
                             ArtistRelease(
