@@ -2,6 +2,8 @@ package com.nazcarbon.music.data
 
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.StreamingService
+import org.schabi.newpipe.extractor.InfoItem
+import org.schabi.newpipe.extractor.ListExtractor
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
@@ -65,15 +67,16 @@ class NewPipeMusicSource {
             thumbnailUrl = channel.avatars.lastOrNull()?.url ?: artist.thumbnailUrl,
             description = channel.description.orEmpty(),
         )
-        val releases = channel.tabs.flatMap { tab ->
+        val channelReleases = channel.tabs.flatMap { tab ->
             runCatching {
                 val tabExtractor = service.getChannelTabExtractor(tab)
                 val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
-                if (tabName.contains("video", true) || tabName.contains("short", true) || tabName.contains("live", true)) {
+                val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
+                val isAlbumTab = tabName.contains("album", true)
+                if (!isSingleTab && !isAlbumTab) {
                     emptyList()
                 } else {
-                    tabExtractor.fetchPage()
-                    tabExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>()
+                    collectPlaylistItems(tabExtractor, maxPages = if (isSingleTab) 6 else 3)
                         // A channel tab is already scoped to this artist. Still reject
                         // entries explicitly attributed to another uploader.
                         .filter { item -> item.belongsTo(profile) || item.uploaderName.isNullOrBlank() }
@@ -83,7 +86,7 @@ class NewPipeMusicSource {
                             url = item.url,
                             thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
                             trackCount = item.streamCount.coerceAtLeast(0),
-                            kind = tabName,
+                            kind = if (isSingleTab) "Singles & EPs" else "Albums",
                             year = releaseYear(item.name),
                         )
                     }
@@ -91,8 +94,28 @@ class NewPipeMusicSource {
             }.getOrDefault(emptyList())
         }.distinctBy { it.url }
 
-        val fallbackReleases = if (releases.isNotEmpty()) releases else searchAlbumReleases(profile)
-        return ArtistDiscography(profile, fallbackReleases)
+        // Artist channel tabs can omit well-known singles or expose only a short
+        // first page. Supplement that tab with exact-owner Music Albums results.
+        val searchedSingles = runCatching { searchSingles(profile) }.getOrDefault(emptyList())
+        val releases = (searchedSingles + channelReleases).distinctBy { it.url }
+        val completeReleases = if (releases.isNotEmpty()) {
+            releases
+        } else {
+            runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
+        }
+        return ArtistDiscography(profile, completeReleases)
+    }
+
+    private fun collectPlaylistItems(extractor: ListExtractor<InfoItem>, maxPages: Int): List<PlaylistInfoItem> {
+        extractor.fetchPage()
+        var page = extractor.initialPage
+        val items = mutableListOf<PlaylistInfoItem>()
+        repeat(maxPages) {
+            items += page.items.filterIsInstance<PlaylistInfoItem>()
+            if (!page.hasNextPage()) return items
+            page = runCatching { extractor.getPage(page.nextPage) }.getOrNull() ?: return items
+        }
+        return items
     }
 
     private fun PlaylistInfoItem.belongsTo(artist: MusicArtist): Boolean {
@@ -127,6 +150,29 @@ class NewPipeMusicSource {
         }.distinctBy { it.id }
     }
 
+    private fun searchSingles(artist: MusicArtist): List<ArtistRelease> {
+        val handler = service.searchQHFactory.fromQuery(
+            "${artist.name} singles",
+            listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS),
+            "",
+        )
+        val extractor = service.getSearchExtractor(handler)
+        return collectPlaylistItems(extractor, maxPages = 3)
+            .filter { it.belongsTo(artist) }
+            .filter { item -> item.streamCount in 1..6 || item.name.contains("single", true) || item.name.contains("EP", true) }
+            .map { item ->
+                ArtistRelease(
+                    title = item.name,
+                    url = item.url,
+                    thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                    trackCount = item.streamCount.coerceAtLeast(0),
+                    kind = if (item.streamCount in 2..6) "EP" else "Single",
+                    year = releaseYear(item.name),
+                )
+            }
+            .distinctBy { it.url }
+    }
+
     private fun searchAlbumReleases(artist: MusicArtist): List<ArtistRelease> {
         val handler = service.searchQHFactory.fromQuery(
             artist.name,
@@ -134,8 +180,7 @@ class NewPipeMusicSource {
             "",
         )
         val extractor = service.getSearchExtractor(handler)
-        extractor.fetchPage()
-        return extractor.initialPage.items.filterIsInstance<PlaylistInfoItem>()
+        return collectPlaylistItems(extractor, maxPages = 3)
             // Album search is global, so only retain releases with an exact artist
             // attribution. This avoids unrelated artists leaking into discography.
             .filter { it.belongsTo(artist) }

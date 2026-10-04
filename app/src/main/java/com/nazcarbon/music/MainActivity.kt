@@ -1257,6 +1257,12 @@ class MainActivity : ComponentActivity() {
     onOpenRelease: (ArtistRelease) -> Unit,
 ) {
     val releases = remember(discography?.releases) { discography?.releases.orEmpty() }
+    val singles = remember(releases) {
+        releases.filter(::isSingleRelease)
+    }
+    val albums = remember(releases) {
+        releases.filterNot(::isSingleRelease)
+    }
     val chronologicalReleases = remember(releases) {
         releases.withIndex()
             .sortedWith(compareByDescending<IndexedValue<ArtistRelease>> { it.value.year ?: Int.MIN_VALUE }.thenBy { it.index })
@@ -1301,19 +1307,45 @@ class MainActivity : ComponentActivity() {
             error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
             discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
-                item(key = "popular-releases-title") {
-                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 8.dp)) {
-                        Text("Albums & singles", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                        Text("SWIPE TO EXPLORE  ·  HOLD A COVER TO FLIP", color = Muted, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 4.dp))
+                if (singles.isNotEmpty()) {
+                    item(key = "singles-section-title") {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Singles & EPs", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                Text("THE TRACKS THAT HIT ON THEIR OWN", color = Muted, fontSize = 10.sp, letterSpacing = 1.1.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+                            Text("${singles.size} RELEASES", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                        }
+                    }
+                    item(key = "singles-carousel") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            itemsIndexed(singles, key = { _, release -> "single:${release.url}" }) { index, release ->
+                                ArtistReleaseCard(release, index, isSingle = true, onOpen = onOpenRelease)
+                            }
+                        }
                     }
                 }
-                item(key = "release-carousel") {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        itemsIndexed(releases, key = { _, release -> "carousel:${release.url}" }) { index, release ->
-                            ArtistReleaseCard(release, index, onOpenRelease)
+                if (albums.isNotEmpty()) {
+                    item(key = "albums-section-title") {
+                        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)) {
+                            Text("Albums", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                            Text("SWIPE TO EXPLORE  ·  HOLD A COVER TO FLIP", color = Muted, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 4.dp))
+                        }
+                    }
+                    item(key = "albums-carousel") {
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        ) {
+                            itemsIndexed(albums, key = { _, release -> "album:${release.url}" }) { index, release ->
+                                ArtistReleaseCard(release, index, isSingle = false, onOpen = onOpenRelease)
+                            }
                         }
                     }
                 }
@@ -1326,6 +1358,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun isSingleRelease(release: ArtistRelease): Boolean =
+    release.kind.contains("single", true) || release.kind.contains("ep", true) || release.trackCount == 1L
+
 @Composable private fun VinylArtistArt(imageUrl: String, modifier: Modifier = Modifier) {
     Box(modifier.clip(CircleShape).background(Color(0xFF090B0F)), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF232A34)), contentAlignment = Alignment.Center) {
@@ -1336,7 +1371,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ArtistReleaseCard(release: ArtistRelease, index: Int, onOpen: (ArtistRelease) -> Unit) {
+@Composable private fun ArtistReleaseCard(release: ArtistRelease, index: Int, isSingle: Boolean, onOpen: (ArtistRelease) -> Unit) {
     val interactionSource = remember(release.url) { MutableInteractionSource() }
     val hovered by interactionSource.collectIsHoveredAsState()
     var held by remember(release.url) { mutableStateOf(false) }
@@ -1367,10 +1402,16 @@ class MainActivity : ComponentActivity() {
     )
     val albumShape = RoundedCornerShape(25.dp)
     val tilt = if (index % 2 == 0) -3f else 3f
+    val cardWidth = if (isSingle) 194.dp else 232.dp
+    val artWindowHeight = if (isSingle) 194.dp else 238.dp
+    val sleeveSize = if (isSingle) 154.dp else 194.dp
+    val vinylSize = if (isSingle) 166.dp else 202.dp
+    val glowSize = if (isSingle) 184.dp else 220.dp
+    val cardHeight = if (isSingle) 270.dp else 322.dp
 
     Column(
-        Modifier.width(232.dp)
-            .height(322.dp)
+        Modifier.width(cardWidth)
+            .height(cardHeight)
             .hoverable(interactionSource)
             .pointerInput(release.url) {
                 detectTapGestures(
@@ -1384,20 +1425,20 @@ class MainActivity : ComponentActivity() {
             },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(Modifier.fillMaxWidth().height(238.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxWidth().height(artWindowHeight), contentAlignment = Alignment.Center) {
             Box(
-                Modifier.size(220.dp)
+                Modifier.size(glowSize)
                     .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.22f), Color(0xFF6C4DFF).copy(alpha = 0.10f), Color.Transparent)), CircleShape),
             )
             VinylRecord(
-                Modifier.size(202.dp)
+                Modifier.size(vinylSize)
                     .align(Alignment.Center)
                     .offset(x = 18.dp)
                     .graphicsLayer { rotationZ = -7f + (floatHeight + idleFloat) * 0.12f },
                 release.thumbnailUrl,
             )
             Box(
-                Modifier.size(194.dp)
+                Modifier.size(sleeveSize)
                     .align(Alignment.Center)
                     .offset(x = (-11).dp, y = -(floatHeight + idleFloat).dp)
                     .graphicsLayer {
@@ -1412,7 +1453,20 @@ class MainActivity : ComponentActivity() {
                     .background(Raised),
             ) {
                 if (flipAngle < 90f) {
-                    AsyncImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    Box(Modifier.fillMaxSize()) {
+                        AsyncImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        if (isSingle) {
+                            Box(
+                                Modifier.align(Alignment.TopStart).padding(9.dp)
+                                    .clip(RoundedCornerShape(50))
+                                    .background(Color(0xDD090B0F))
+                                    .border(1.dp, Cyan.copy(alpha = 0.6f), RoundedCornerShape(50))
+                                    .padding(horizontal = 9.dp, vertical = 5.dp),
+                            ) {
+                                Text(if (release.kind.contains("ep", true) || release.trackCount > 1) "EP" else "SINGLE", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                            }
+                        }
+                    }
                 } else {
                     Column(
                         Modifier.fillMaxSize()
@@ -1422,7 +1476,7 @@ class MainActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column {
-                            Text("NOW SPINNING", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                            Text(if (isSingle) "SINGLE DROP" else "NOW SPINNING", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                             Spacer(Modifier.height(12.dp))
                             Text(release.title, color = Ink, fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         }
