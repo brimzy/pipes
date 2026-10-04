@@ -146,7 +146,15 @@ class NewPipeMusicSource {
             .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
-        if (artist.name.contains("kendrick", true)) println("Artist shelves ${artist.url}: raw=${carouselRenderers.size}; ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}")
+        if (artist.name.contains("kendrick", true)) {
+            val rawShelves = carouselRenderers.joinToString { shelf ->
+                val header = shelf.optJSONObject("header")
+                val basic = header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                val title = basic?.optJSONObject("title")
+                "${title?.let(::textFromRuns)} title=${title?.optJSONObject("navigationEndpoint")} button=${basic?.optJSONObject("moreContentButton")?.toString()?.take(300)}"
+            }
+            println("Artist shelves ${artist.url}: raw=${carouselRenderers.size}; ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}; raw=$rawShelves")
+        }
         return coroutineScope {
             shelves.map { shelf -> async(Dispatchers.IO) {
                 runCatching { loadArtistReleaseShelf(shelf, context) }.getOrDefault(emptyList())
