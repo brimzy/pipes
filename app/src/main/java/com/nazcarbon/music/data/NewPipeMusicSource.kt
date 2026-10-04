@@ -15,14 +15,11 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQu
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -92,41 +89,17 @@ class NewPipeMusicSource {
             ?.takeIf { now - it.loadedAtMillis < DISCOGRAPHY_CACHE_TTL_MS }
             ?.let { return@coroutineScope it.value }
 
-        val profile = artist
         val musicCatalog = async(Dispatchers.IO) {
-            runCatching {
-                val artistMatches = searchArtists(profile.name)
-                    .filter { it.name.normalizedArtistName() == profile.name.normalizedArtistName() }
-                    .plus(profile)
-                    .distinctBy { it.url.canonicalChannelUrl() }
-                artistMatches.map { match -> async(Dispatchers.IO) {
-                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList())
-                } }.awaitAll().flatten().distinctBy { it.url }
-            }.getOrDefault(emptyList())
+            loadYouTubeMusicArtistReleases(artist)
         }.await()
-        // Fill album gaps when YouTube omits the album shelf link, and merge search
-        // matches for standalone singles that may not be linked from the artist page.
-        val searchedReleases = coroutineScope {
-            val albums: Deferred<List<ArtistRelease>>? = if (musicCatalog.none { it.kind == "Album" }) async(Dispatchers.IO) {
-                runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
-            } else null
-            val singles = async(Dispatchers.IO) {
-                runCatching { searchSingles(profile) }.getOrDefault(emptyList())
-            }
-            // Give explicitly filtered Singles & EPs results category priority when
-            // the broader album search returns the same playlist URL.
-            singles.await() + (albums?.await().orEmpty())
-        }
-        val indexedAlbums = if (musicCatalog.none { it.kind == "Album" }) {
-            async(Dispatchers.IO) {
-                runCatching { loadMissingAlbumsFromMusicBrainz(profile, musicCatalog + searchedReleases) }
-                    .getOrDefault(emptyList())
-            }.await()
-        } else emptyList()
-        val releases = (indexedAlbums + musicCatalog + searchedReleases)
-            .distinctBy { it.url }
+        // Search is a recovery path when YouTube provides no release shelves.
+        val releases = (if (musicCatalog.isNotEmpty()) musicCatalog else {
+            val albums = async(Dispatchers.IO) { searchAlbumReleases(artist) }
+            val singles = async(Dispatchers.IO) { searchSingles(artist) }
+            albums.await() + singles.await()
+        }).distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
-        ArtistDiscography(profile, releases).also { result ->
+        ArtistDiscography(artist, releases).also { result ->
             if (releases.isNotEmpty()) {
                 discographyCache[cacheKey] = CachedDiscography(now, result)
             }
@@ -145,17 +118,49 @@ class NewPipeMusicSource {
             .put("hl", "en").put("gl", "US"))
         val artistPage = youtubeMusicBrowse(JSONObject().put("browseId", channelId), context)
         val carouselRenderers = findJsonObjects(artistPage, "musicCarouselShelfRenderer")
-        val shelves = carouselRenderers
-            .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
-            .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
-            .distinctBy { "${it.title.lowercase()}|${it.params}" }
-            .toMutableList()
-        return coroutineScope {
-            shelves.map { shelf -> async(Dispatchers.IO) {
-                runCatching { loadArtistReleaseShelf(shelf, context) }
-                    .getOrDefault(emptyList())
-            } }.awaitAll().flatten().distinctBy { it.url }
+        val releaseCarousels = carouselRenderers.filter { shelf ->
+            val title = shelf.optJSONObject("header")
+                ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                ?.optJSONObject("title")?.let(::textFromRuns).orEmpty()
+            title == "Albums" || title == "Singles & EPs" || title == "Singles" || title == "EPs"
         }
+        val initialReleases = parseArtistReleaseCards(artistPage)
+        val shelves = releaseCarousels.mapNotNull { it.toArtistReleaseShelf() }
+            .distinctBy { "${it.browseId}|${it.params}" }
+        return coroutineScope {
+            val expanded = shelves.map { shelf -> async(Dispatchers.IO) {
+                loadArtistReleaseShelf(shelf, context)
+            } }.awaitAll().flatten()
+            (initialReleases + expanded).distinctBy { it.url }
+        }
+    }
+
+    internal fun parseArtistReleaseCards(artistPage: JSONObject): List<ArtistRelease> =
+        findJsonObjects(artistPage, "musicCarouselShelfRenderer").flatMap { shelf ->
+            val title = shelf.optJSONObject("header")
+                ?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+                ?.optJSONObject("title")?.let(::textFromRuns).orEmpty()
+            if (title !in listOf("Albums", "Singles & EPs", "Singles", "EPs")) emptyList()
+            else findJsonObjects(shelf, "musicTwoRowItemRenderer").mapNotNull { releaseFromCard(it, title) }
+        }
+
+    private fun releaseFromCard(card: JSONObject, shelfTitle: String): ArtistRelease? {
+        val title = card.optJSONObject("title")?.let(::textFromRuns).orEmpty()
+        val playlistId = findPlaylistId(card)
+        if (title.isBlank() || playlistId.isBlank()) return null
+        val subtitle = card.optJSONObject("subtitle")?.let(::textFromRuns).orEmpty()
+        val kind = when {
+            shelfTitle == "Albums" -> "Album"
+            Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(subtitle) || shelfTitle == "EPs" -> "EP"
+            else -> "Single"
+        }
+        return ArtistRelease(
+            title = title,
+            url = "https://music.youtube.com/playlist?list=$playlistId",
+            thumbnailUrl = findThumbnailUrl(card),
+            kind = kind,
+            year = releaseYear(subtitle),
+        )
     }
 
     private fun JSONObject.toArtistReleaseShelf(): ArtistReleaseShelf? {
@@ -166,7 +171,7 @@ class NewPipeMusicSource {
         val browse = titleRenderer.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
         val browseId = browse?.optString("browseId").orEmpty()
         val params = browse?.optString("params").orEmpty()
-        if (browseId.isNotBlank() && params.isNotBlank()) return ArtistReleaseShelf(title, browseId, params)
+        if (browseId.isNotBlank()) return ArtistReleaseShelf(title, browseId, params)
         val fallback = findBrowseEndpoint(basicHeader) ?: return null
         return ArtistReleaseShelf(title, fallback.first, fallback.second)
     }
@@ -179,35 +184,8 @@ class NewPipeMusicSource {
         val releases = mutableListOf<ArtistRelease>()
         var response = youtubeMusicBrowse(baseRequest, context)
         repeat(MAX_RELEASE_PAGES) {
-            val grid = findJsonObject(response, "gridRenderer") ?: return releases
-            val items = grid.optJSONArray("items") ?: JSONArray()
-            for (index in 0 until items.length()) {
-                val card = findJsonObject(items.optJSONObject(index) ?: continue, "musicTwoRowItemRenderer") ?: continue
-                val titleObject = card.optJSONObject("title") ?: continue
-                val title = textFromRuns(titleObject)
-                if (title.isBlank()) continue
-                val browseId = titleObject.optJSONObject("navigationEndpoint")
-                    ?.optJSONObject("browseEndpoint")?.optString("browseId").orEmpty()
-                val playlistId = findPlaylistId(card)
-                val url = when {
-                    playlistId.isNotBlank() -> "https://music.youtube.com/playlist?list=$playlistId"
-                    browseId.isNotBlank() -> "https://music.youtube.com/browse/$browseId"
-                    else -> ""
-                }
-                if (url.isBlank()) continue
-                val subtitle = card.optJSONObject("subtitle")?.let(::textFromRuns).orEmpty()
-                val isSinglesShelf = shelf.title.contains("single", true)
-                val kind = if (isSinglesShelf) {
-                    if (Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(subtitle)) "EP" else "Single"
-                } else "Album"
-                releases += ArtistRelease(
-                    title = title,
-                    url = url,
-                    thumbnailUrl = findThumbnailUrl(card),
-                    kind = kind,
-                    year = releaseYear(subtitle),
-                )
-            }
+            findJsonObjects(response, "musicTwoRowItemRenderer")
+                .mapNotNull { releaseFromCard(it, shelf.title) }.forEach(releases::add)
             val continuation = findContinuation(response) ?: return releases
             response = youtubeMusicBrowse(JSONObject().put("continuation", continuation), context)
         }
@@ -237,9 +215,6 @@ class NewPipeMusicSource {
 
     private fun youtubeMusicClientVersion(): String = "1." +
         LocalDate.now(ZoneOffset.UTC).format(DateTimeFormatter.BASIC_ISO_DATE) + ".01.00"
-
-    private fun findJsonObject(root: JSONObject, key: String): JSONObject? =
-        findJsonObjects(root, key).firstOrNull()
 
     private fun findJsonObjects(root: JSONObject, key: String): List<JSONObject> {
         val found = mutableListOf<JSONObject>()
@@ -272,7 +247,7 @@ class NewPipeMusicSource {
                         if (key == "browseEndpoint" && child is JSONObject) {
                             val id = child.optString("browseId")
                             val params = child.optString("params")
-                            if (id.isNotBlank() && params.isNotBlank()) return id to params
+                            if (id.isNotBlank()) return id to params
                         }
                         visit(child)?.let { return it }
                     }
@@ -341,96 +316,9 @@ class NewPipeMusicSource {
     }
 
     private fun findContinuation(root: JSONObject): String? =
-        findJsonObjects(root, "nextContinuationData").firstOrNull()?.optString("continuation")
+        (findJsonObjects(root, "nextContinuationData").firstOrNull()?.optString("continuation")
+            ?: findJsonObjects(root, "continuationCommand").firstOrNull()?.optString("token"))
             ?.takeIf { it.isNotBlank() }
-
-    private data class MusicBrainzAlbum(val title: String, val year: Int?)
-
-    private suspend fun loadMissingAlbumsFromMusicBrainz(
-        artist: MusicArtist,
-        knownReleases: List<ArtistRelease>,
-    ): List<ArtistRelease> {
-        val encodedArtist = URLEncoder.encode("artist:\"${artist.name}\"", Charsets.UTF_8.name())
-        val artistSearch = musicBrainzGet("https://musicbrainz.org/ws/2/artist/?query=$encodedArtist&fmt=json&limit=10")
-        val artists = artistSearch.optJSONArray("artists") ?: return emptyList()
-        val targetArtist = (0 until artists.length()).mapNotNull(artists::optJSONObject)
-            .firstOrNull { it.optString("name").normalizedArtistName() == artist.name.normalizedArtistName() }
-            ?: return emptyList()
-        val artistId = targetArtist.optString("id")
-        if (artistId.isBlank()) return emptyList()
-
-        // MusicBrainz asks public clients to stay under one request per second.
-        val releaseGroups = mutableListOf<JSONObject>()
-        for (offset in listOf(0, 100, 200)) {
-            if (offset > 0) delay(1_100)
-            val page = musicBrainzGet(
-                "https://musicbrainz.org/ws/2/release-group/?artist=$artistId&fmt=json&limit=100&offset=$offset&type=album",
-            ).optJSONArray("release-groups") ?: continue
-            for (index in 0 until page.length()) page.optJSONObject(index)?.let(releaseGroups::add)
-            if (page.length() < 100) break
-        }
-        val knownAlbumKeys = knownReleases.filter { it.kind == "Album" }.map { it.title.catalogKey() }.toSet()
-        val missingAlbums = releaseGroups.mapNotNull { group ->
-            if (group.optString("primary-type") != "Album") return@mapNotNull null
-            val artistCredit = group.optJSONArray("artist-credit") ?: return@mapNotNull null
-            val creditedToArtist = (0 until artistCredit.length()).any { creditIndex ->
-                artistCredit.optJSONObject(creditIndex)?.optJSONObject("artist")?.optString("id") == artistId
-            }
-            if (!creditedToArtist) return@mapNotNull null
-            val title = group.optString("title").trim()
-            val key = title.catalogKey()
-            if (title.isBlank() || key in knownAlbumKeys) return@mapNotNull null
-            MusicBrainzAlbum(title, group.optString("first-release-date").take(4).toIntOrNull())
-        }.distinctBy { it.title.catalogKey() }.take(40)
-
-        return coroutineScope {
-            missingAlbums.map { album -> async(Dispatchers.IO) {
-                runCatching {
-                    val expectedArtistName = artist.name.normalizedArtistName()
-                    searchMusicAlbums("${artist.name} ${album.title}", maxPages = 2)
-                        .filter {
-                            it.uploaderName.orEmpty().normalizedArtistName() == expectedArtistName ||
-                                it.streamCount >= 8
-                        }
-                        .filter { it.name.isSameReleaseTitle(album.title) }
-                        .map { item ->
-                            ArtistRelease(
-                                title = item.name,
-                                url = item.url,
-                                thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
-                                trackCount = item.streamCount.coerceAtLeast(0),
-                                kind = "Album",
-                                year = album.year ?: releaseYear(item.name),
-                            )
-                        }
-                }.getOrDefault(emptyList())
-            } }.awaitAll().flatten().distinctBy { it.url }
-        }
-    }
-
-    private fun musicBrainzGet(url: String): JSONObject {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 12_000
-            readTimeout = 18_000
-            setRequestProperty("User-Agent", "PipesMusic/2.3 (https://github.com/brimzy/pipes)")
-            setRequestProperty("Accept", "application/json")
-        }
-        val status = connection.responseCode
-        val body = (if (status >= 400) connection.errorStream else connection.inputStream)
-            ?.bufferedReader()?.use { it.readText() }.orEmpty()
-        connection.disconnect()
-        check(status in 200..299) { "MusicBrainz request failed with HTTP $status" }
-        return JSONObject(body)
-    }
-
-    private fun String.catalogKey(): String = lowercase().filter(Char::isLetterOrDigit)
-
-    private fun String.isSameReleaseTitle(expected: String): Boolean {
-        val actualKey = catalogKey()
-        val expectedKey = expected.catalogKey()
-        return actualKey == expectedKey ||
-            (expectedKey.length >= 5 && (actualKey.startsWith(expectedKey) || actualKey.contains(expectedKey)))
-    }
 
     private fun collectItems(
         extractor: ListExtractor<out InfoItem>,
