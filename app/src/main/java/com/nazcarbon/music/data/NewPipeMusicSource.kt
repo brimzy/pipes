@@ -8,7 +8,6 @@ import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
-import org.schabi.newpipe.extractor.InfoItem
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -22,7 +21,7 @@ class NewPipeMusicSource {
 
     fun searchSongs(query: String): List<MusicTrack> {
         val handler: SearchQueryHandler = service.searchQHFactory.fromQuery(
-            query,
+            query.trim(),
             listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS),
             "",
         )
@@ -38,7 +37,7 @@ class NewPipeMusicSource {
                 streamUrl = "",
                 pageUrl = item.url,
             )
-        }
+        }.distinctBy { it.id }
     }
 
     fun resolveAudio(track: MusicTrack): MusicTrack {
@@ -48,7 +47,13 @@ class NewPipeMusicSource {
             .filter { it.isUrl }
             .maxByOrNull { it.averageBitrate }
             ?: error("YouTube returned no playable audio URL for this track")
-        return track.copy(streamUrl = audio.content)
+        return track.copy(
+            streamUrl = audio.content,
+            audioQuality = listOfNotNull(
+                audio.format?.name,
+                audio.averageBitrate.takeIf { it > 0 }?.let { "$it kbps" },
+            ).joinToString(" · "),
+        )
     }
 
     fun relatedSongs(track: MusicTrack): List<MusicTrack> {
