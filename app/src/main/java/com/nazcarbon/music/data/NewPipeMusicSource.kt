@@ -97,7 +97,9 @@ class NewPipeMusicSource {
                     .plus(profile)
                     .distinctBy { it.url.canonicalChannelUrl() }
                 artistMatches.map { match -> async(Dispatchers.IO) {
-                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList()).also { found ->
+                    runCatching { loadYouTubeMusicArtistReleases(match) }
+                        .onFailure { error -> if (profile.name.contains("kendrick", true)) println("Artist catalog failed ${match.url}: ${error.message}") }
+                        .getOrDefault(emptyList()).also { found ->
                         if (profile.name.contains("kendrick", true)) {
                             println("Artist catalog ${match.url}: ${found.size} ${found.joinToString { it.title }}")
                         }
@@ -114,7 +116,9 @@ class NewPipeMusicSource {
             val singles = async(Dispatchers.IO) {
                 runCatching { searchSingles(profile) }.getOrDefault(emptyList())
             }
-            albums.await() + singles.await()
+            // Give the explicitly filtered Singles & EPs results category priority
+            // when a broad album search returns the same playlist URL.
+            singles.await() + albums.await()
         } else emptyList()
         val releases = (musicCatalog + searchedReleases)
             .distinctBy { it.url }
