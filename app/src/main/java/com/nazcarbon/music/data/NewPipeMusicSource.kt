@@ -14,6 +14,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import java.net.HttpURLConnection
 import java.net.URL
@@ -89,31 +90,18 @@ class NewPipeMusicSource {
             thumbnailUrl = channel.avatars.lastOrNull()?.url ?: artist.thumbnailUrl,
             description = channel.description.orEmpty(),
         )
+        // YouTube Music splits some artists across an official channel and a Topic
+        // channel. Search both exact-name channel entries and merge their album tabs.
+        // This is artist-agnostic and avoids silently presenting one channel's subset.
+        val matchingChannels = runCatching { searchArtists(profile.name) }
+            .getOrDefault(emptyList())
+            .filter { it.name.normalizedArtistName() == profile.name.normalizedArtistName() }
+            .plus(profile)
+            .distinctBy { it.url.canonicalChannelUrl() }
         val tabReleasesTask = async(Dispatchers.IO) {
-            channel.tabs.flatMap { tab ->
-                runCatching {
-                    val tabExtractor = service.getChannelTabExtractor(tab)
-                    val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
-                    val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
-                    val isAlbumTab = tabName.contains("album", true)
-                    if (!isSingleTab && !isAlbumTab) {
-                        emptyList()
-                    } else {
-                        // The tab itself is scoped to this artist. Uploader labels can
-                        // contain featured artists or differ from the channel's display name.
-                        collectPlaylistItems(tabExtractor).map { item ->
-                            ArtistRelease(
-                                title = item.name,
-                                url = item.url,
-                                thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
-                                trackCount = item.streamCount.coerceAtLeast(0),
-                                kind = releaseKind(item.name, item.streamCount, isSingleTab),
-                                year = releaseYear(item.name),
-                            )
-                        }
-                    }
-                }.getOrDefault(emptyList())
-            }.distinctBy { it.url }
+            matchingChannels.map { candidate -> async(Dispatchers.IO) {
+                runCatching { collectArtistTabReleases(candidate) }.getOrDefault(emptyList())
+            } }.awaitAll().flatten().distinctBy { it.url }
         }
 
         // Search endpoints supplement the channel catalog in parallel so a cold
@@ -135,6 +123,30 @@ class NewPipeMusicSource {
                 discographyCache[cacheKey] = CachedDiscography(now, result)
             }
         }
+    }
+
+    private fun collectArtistTabReleases(artist: MusicArtist): List<ArtistRelease> {
+        val channel = service.getChannelExtractor(artist.url)
+        channel.fetchPage()
+        return channel.tabs.flatMap { tab ->
+            runCatching {
+                val tabExtractor = service.getChannelTabExtractor(tab)
+                val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
+                val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
+                val isAlbumTab = tabName.contains("album", true)
+                if (!isSingleTab && !isAlbumTab) emptyList()
+                else collectPlaylistItems(tabExtractor).map { item ->
+                    ArtistRelease(
+                        title = item.name,
+                        url = item.url,
+                        thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                        trackCount = item.streamCount.coerceAtLeast(0),
+                        kind = releaseKind(item.name, item.streamCount, isSingleTab),
+                        year = releaseYear(item.name),
+                    )
+                }
+            }.getOrDefault(emptyList())
+        }.distinctBy { it.url }
     }
 
     private fun collectItems(
