@@ -6,8 +6,10 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandler
-import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import org.schabi.newpipe.extractor.channel.ChannelInfoItem
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -38,6 +40,89 @@ class NewPipeMusicSource {
                 pageUrl = item.url,
             )
         }.distinctBy { it.id }
+    }
+
+    fun searchArtists(query: String): List<MusicArtist> {
+        val handler = service.searchQHFactory.fromQuery(
+            query.trim(),
+            listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ARTISTS),
+            "",
+        )
+        val extractor = service.getSearchExtractor(handler)
+        extractor.fetchPage()
+        return extractor.initialPage.items.filterIsInstance<ChannelInfoItem>()
+            .map { item -> MusicArtist(item.name, item.url, item.thumbnails.lastOrNull()?.url.orEmpty()) }
+            .distinctBy { it.url }
+            .take(12)
+    }
+
+    /** Artist tabs provide album and single playlists; load only their summaries here. */
+    fun loadArtistDiscography(artist: MusicArtist): ArtistDiscography {
+        val channel = service.getChannelExtractor(artist.url)
+        channel.fetchPage()
+        val profile = artist.copy(
+            name = channel.name.ifBlank { artist.name },
+            thumbnailUrl = channel.avatars.lastOrNull()?.url ?: artist.thumbnailUrl,
+            description = channel.description.orEmpty(),
+        )
+        val releases = channel.tabs.flatMap { tab ->
+            runCatching {
+                val tabExtractor = service.getChannelTabExtractor(tab)
+                val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
+                if (tabName.contains("video", true) || tabName.contains("short", true) || tabName.contains("live", true)) {
+                    emptyList()
+                } else {
+                    tabExtractor.fetchPage()
+                    tabExtractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().map { item ->
+                        ArtistRelease(
+                            title = item.name,
+                            url = item.url,
+                            thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                            trackCount = item.streamCount.coerceAtLeast(0),
+                            kind = tabName,
+                        )
+                    }
+                }
+            }.getOrDefault(emptyList())
+        }.distinctBy { it.url }
+
+        val fallbackReleases = if (releases.isNotEmpty()) releases else searchAlbumReleases(profile.name)
+        return ArtistDiscography(profile, fallbackReleases)
+    }
+
+    fun loadReleaseTracks(release: ArtistRelease, artistName: String): List<MusicTrack> {
+        val extractor = service.getPlaylistExtractor(release.url)
+        extractor.fetchPage()
+        return extractor.initialPage.items.filterIsInstance<StreamInfoItem>().map { item ->
+            MusicTrack(
+                id = item.url,
+                title = item.name,
+                artist = item.uploaderName.orEmpty().ifBlank { artistName },
+                durationSeconds = item.duration,
+                thumbnailUrl = item.thumbnails.lastOrNull()?.url ?: release.thumbnailUrl,
+                streamUrl = "",
+                pageUrl = item.url,
+            )
+        }.distinctBy { it.id }
+    }
+
+    private fun searchAlbumReleases(artistName: String): List<ArtistRelease> {
+        val handler = service.searchQHFactory.fromQuery(
+            artistName,
+            listOf(YoutubeSearchQueryHandlerFactory.MUSIC_ALBUMS),
+            "",
+        )
+        val extractor = service.getSearchExtractor(handler)
+        extractor.fetchPage()
+        return extractor.initialPage.items.filterIsInstance<PlaylistInfoItem>().map { item ->
+            ArtistRelease(
+                title = item.name,
+                url = item.url,
+                thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                trackCount = item.streamCount.coerceAtLeast(0),
+                kind = "Albums & singles",
+            )
+        }.distinctBy { it.url }.take(30)
     }
 
     fun resolveAudio(track: MusicTrack): MusicTrack {

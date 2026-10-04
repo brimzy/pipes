@@ -76,7 +76,10 @@ import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.AudioDownloads
+import com.nazcarbon.music.data.ArtistDiscography
+import com.nazcarbon.music.data.ArtistRelease
 import com.nazcarbon.music.data.MusicTrack
+import com.nazcarbon.music.data.MusicArtist
 import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
 import com.nazcarbon.music.data.PlaylistStore
@@ -98,6 +101,8 @@ private val Ink = Color(0xFFF2F4F8)
 private val Muted = Color(0xFF9BA2A8)
 
 private const val RADIO_METADATA_KEY = "pipes_radio"
+private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
+private const val AUTO_QUEUE_SESSION_KEY = "pipes_auto_queue_session"
 
 private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = false) =
     MediaItem.Builder()
@@ -108,7 +113,15 @@ private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = fal
                 .setTitle(track.title)
                 .setArtist(track.artist)
                 .setArtworkUri(Uri.parse(track.thumbnailUrl))
-                .setExtras(Bundle().apply { putBoolean(RADIO_METADATA_KEY, radio); putString("audio_quality", track.audioQuality); if (radio) putString("pipes_radio_session", java.util.UUID.randomUUID().toString()) })
+                .setExtras(Bundle().apply {
+                    val queueSession = java.util.UUID.randomUUID().toString()
+                    val canAutoplay = !track.pageUrl.startsWith("content://")
+                    putBoolean(RADIO_METADATA_KEY, radio)
+                    putBoolean(AUTO_QUEUE_METADATA_KEY, canAutoplay)
+                    if (canAutoplay) putString(AUTO_QUEUE_SESSION_KEY, queueSession)
+                    if (radio) putString("pipes_radio_session", queueSession)
+                    putString("audio_quality", track.audioQuality)
+                })
                 .build(),
         )
         .build()
@@ -163,8 +176,18 @@ class MainActivity : ComponentActivity() {
                 var linkText by remember { mutableStateOf("") }
                 var showNewPlaylistDialog by remember { mutableStateOf(false) }
                 var playlistName by remember { mutableStateOf("") }
-                var trackToSave by remember { mutableStateOf<MusicTrack?>(null) }
+                var tracksToSave by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var previousPage by remember { mutableStateOf("Home") }
+                var artistSearchOrigin by remember { mutableStateOf("Search") }
+                var artistQuery by remember { mutableStateOf("") }
+                var artistResults by remember { mutableStateOf<List<MusicArtist>>(emptyList()) }
+                var selectedArtist by remember { mutableStateOf<ArtistDiscography?>(null) }
+                var selectedRelease by remember { mutableStateOf<ArtistRelease?>(null) }
+                var artistLoading by remember { mutableStateOf(false) }
+                var artistError by remember { mutableStateOf<String?>(null) }
+                var releaseTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+                var releaseLoading by remember { mutableStateOf(false) }
+                var releaseError by remember { mutableStateOf<String?>(null) }
                 var radioLoading by remember { mutableStateOf(false) }
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
                 var notice by remember { mutableStateOf<String?>(null) }
@@ -195,7 +218,7 @@ class MainActivity : ComponentActivity() {
                         position = player.currentPosition.coerceAtLeast(0)
                         duration = player.duration.coerceAtLeast(0)
                         seekable = player.isCurrentMediaItemSeekable
-                        radioLoading = player.sessionExtras.getBoolean("radio_loading")
+                        radioLoading = player.sessionExtras.getBoolean("radio_loading") || player.sessionExtras.getBoolean("autoplay_loading")
                         buffering = player.playbackState == Player.STATE_BUFFERING
                         shuffle = player.shuffleModeEnabled
                         repeat = player.repeatMode
@@ -221,6 +244,9 @@ class MainActivity : ComponentActivity() {
                         "Now playing" -> previousPage
                         "Up next" -> "Now playing"
                         "Playlist" -> "Library"
+                        "Release" -> "Artist"
+                        "Artist" -> "Artist Search"
+                        "Artist Search" -> artistSearchOrigin
                         "Search", "Explore", "Library" -> "Home"
                         else -> "Home"
                     }
@@ -285,6 +311,54 @@ class MainActivity : ComponentActivity() {
                     query = text
                     page = "Search"
                     songSearch.submit(text)
+                }
+
+                fun findArtists(text: String) {
+                    val clean = text.trim()
+                    if (clean.isBlank()) return
+                    artistSearchOrigin = page
+                    artistQuery = clean
+                    artistResults = emptyList()
+                    artistError = null
+                    artistLoading = true
+                    page = "Artist Search"
+                    lifecycleScope.launch {
+                        runCatching { withContext(Dispatchers.IO) { source.searchArtists(clean) } }
+                            .onSuccess { artistResults = it }
+                            .onFailure { artistError = "Artist search couldn't load. Check your connection and retry." }
+                        artistLoading = false
+                    }
+                }
+
+                fun openArtist(artist: MusicArtist) {
+                    selectedArtist = ArtistDiscography(artist, emptyList())
+                    artistError = null
+                    artistLoading = true
+                    page = "Artist"
+                    lifecycleScope.launch {
+                        runCatching { withContext(Dispatchers.IO) { source.loadArtistDiscography(artist) } }
+                            .onSuccess { selectedArtist = it }
+                            .onFailure { artistError = "Couldn't load this artist's discography. Check your connection and retry." }
+                        artistLoading = false
+                    }
+                }
+
+                fun openRelease(release: ArtistRelease) {
+                    val artist = selectedArtist?.artist ?: return
+                    selectedRelease = release
+                    releaseTracks = emptyList()
+                    releaseError = null
+                    releaseLoading = true
+                    page = "Release"
+                    lifecycleScope.launch {
+                        runCatching { withContext(Dispatchers.IO) { source.loadReleaseTracks(release, artist.name) } }
+                            .onSuccess { tracks ->
+                                releaseTracks = tracks
+                                tracks.forEach { knownTracks[it.id] = it }
+                            }
+                            .onFailure { releaseError = "Couldn't load these tracks. Check your connection and retry." }
+                        releaseLoading = false
+                    }
                 }
 
                 fun createPlaylist(name: String) {
@@ -434,17 +508,20 @@ class MainActivity : ComponentActivity() {
                     notice = "Added to Commute Mix"
                 }
 
-                fun choosePlaylist(track: MusicTrack) { trackToSave = track }
-                fun addTrackToPlaylist(name: String) {
-                    val track = trackToSave ?: return
+                fun choosePlaylist(track: MusicTrack) { tracksToSave = listOf(track) }
+                fun chooseTracksForPlaylist(tracks: List<MusicTrack>) { tracksToSave = tracks }
+                fun addTracksToPlaylist(name: String) {
+                    val tracks = tracksToSave
                     val playlist = playlists.firstOrNull { it.name == name } ?: return
-                    if (playlist.tracks.any { it.id == track.id }) { notice = "Already in $name" }
+                    val existingIds = playlist.tracks.mapTo(mutableSetOf()) { it.id }
+                    val additions = tracks.filter { existingIds.add(it.id) }
+                    if (additions.isEmpty()) { notice = "Already in $name" }
                     else {
-                        playlists = playlists.map { if (it.name == name) it.copy(tracks = it.tracks + track.copy(streamUrl = "")) else it }
+                        playlists = playlists.map { if (it.name == name) it.copy(tracks = it.tracks + additions.map { track -> track.copy(streamUrl = "") }) else it }
                         PlaylistStore.save(prefs, playlists)
-                        notice = "Added to $name"
+                        notice = "Added ${additions.size} ${if (additions.size == 1) "song" else "songs"} to $name"
                     }
-                    trackToSave = null
+                    tracksToSave = emptyList()
                 }
 
                 fun toggleLike(track: MusicTrack) {
@@ -586,6 +663,7 @@ class MainActivity : ComponentActivity() {
                                     repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
                                     current!!.id in likedIds, { toggleLike(current!!) },
                                     { page = previousPage }, { saveToCommute(current!!) },
+                                    { findArtists(current!!.artist) },
                                     mediaPlayer?.hasNextMediaItem() == true,
                                 )
                             } else when (page) {
@@ -608,7 +686,29 @@ class MainActivity : ComponentActivity() {
                                 ::removeAudioDownload,
                                 { showNewPlaylistDialog = true },
                                 )
-                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, { search(query) })
+                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) })
+                                "Artist Search" -> ArtistSearchResults(artistQuery, artistResults, artistLoading, artistError, { findArtists(artistQuery) }, ::openArtist)
+                                "Artist" -> ArtistDiscographyScreen(
+                                    selectedArtist,
+                                    artistLoading,
+                                    artistError,
+                                    { selectedArtist?.artist?.let { startVibeRadio("${it.name} songs") } },
+                                    ::openRelease,
+                                )
+                                "Release" -> selectedRelease?.let { release ->
+                                    ReleaseTracksScreen(
+                                        release,
+                                        selectedArtist?.artist?.name.orEmpty(),
+                                        releaseTracks,
+                                        releaseLoading,
+                                        releaseError,
+                                        { if (releaseTracks.isNotEmpty()) playSequence(releaseTracks.first(), releaseTracks) },
+                                        { track -> playSequence(track, releaseTracks) },
+                                        { chooseTracksForPlaylist(releaseTracks) },
+                                        ::choosePlaylist,
+                                        { startVibeRadio("${selectedArtist?.artist?.name.orEmpty()} songs") },
+                                    )
+                                }
                                 "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track ->
                                     mediaPlayer?.let { player ->
                                         val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
@@ -658,17 +758,17 @@ class MainActivity : ComponentActivity() {
                     confirmButton = { TextButton(onClick = { createPlaylist(playlistName) }) { Text("Create") } },
                     dismissButton = { TextButton(onClick = { showNewPlaylistDialog = false }) { Text("Cancel") } },
                 )
-                if (trackToSave != null) AlertDialog(
-                    onDismissRequest = { trackToSave = null },
-                    title = { Text("Add to playlist") },
+                if (tracksToSave.isNotEmpty()) AlertDialog(
+                    onDismissRequest = { tracksToSave = emptyList() },
+                    title = { Text("Add ${tracksToSave.size} ${if (tracksToSave.size == 1) "song" else "songs"} to playlist") },
                     text = {
                         Column {
                             if (playlists.isEmpty()) Text("Create a playlist in Your library first.", color = Muted)
-                            playlists.forEach { playlist -> TextButton(onClick = { addTrackToPlaylist(playlist.name) }) { Text(playlist.name) } }
-                            TextButton(onClick = { trackToSave = null; showNewPlaylistDialog = true }) { Text("Create a playlist") }
+                            playlists.forEach { playlist -> TextButton(onClick = { addTracksToPlaylist(playlist.name) }) { Text(playlist.name) } }
+                            TextButton(onClick = { tracksToSave = emptyList(); showNewPlaylistDialog = true }) { Text("Create a playlist") }
                         }
                     },
-                    confirmButton = { TextButton(onClick = { trackToSave = null }) { Text("Done") } },
+                    confirmButton = { TextButton(onClick = { tracksToSave = emptyList() }) { Text("Done") } },
                 )
                 if (showCategoryDialog) {
                     CategoryManagerDialog(
@@ -765,9 +865,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onRetry: () -> Unit) {
+@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onArtist: (String) -> Unit, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        TextButton(onClick = { onArtist(query) }, enabled = query.isNotBlank(), modifier = Modifier.padding(horizontal = 12.dp)) {
+            Icon(Icons.Default.MusicNote, null, tint = Cyan)
+            Spacer(Modifier.width(8.dp))
+            Text(if (query.isBlank()) "Browse artist discography" else "Artist discography · $query", color = Cyan, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         when {
             loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(35.dp))
             error != null -> Column(Modifier.padding(20.dp)) {
@@ -776,20 +881,20 @@ class MainActivity : ComponentActivity() {
             }
             tracks.isEmpty() -> Text(if (query.isBlank()) "Search for your favorite songs and artists." else "No songs found. Try another title or artist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
-                items(tracks, key = { it.id }) { track -> TrackRow(track, current?.id == track.id && playing, liked.contains(track.id), onPlay, onLike, onRadio, onSave, onSpotify) }
+                items(tracks, key = { it.id }) { track -> TrackRow(track, current?.id == track.id && playing, liked.contains(track.id), onPlay, onLike, onRadio, onSave, onSpotify, onArtist) }
             }
         }
     }
 }
 
-@Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: ((MusicTrack) -> Unit)? = null) {
+@Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: ((MusicTrack) -> Unit)? = null, onArtist: ((String) -> Unit)? = null) {
     var menuOpen by remember(track.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable { onPlay(track) }.padding(horizontal = 20.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(track.title, color = if (active) Cyan else Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-            Spacer(Modifier.height(4.dp)); Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp)); Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.clickable(enabled = onArtist != null) { onArtist?.invoke(track.artist) })
         }
         IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Muted) }
         Box {
@@ -1077,19 +1182,163 @@ class MainActivity : ComponentActivity() {
         Text("Up next", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
         Text(
             when {
-                radioLoading -> "Finding songs related to ${radioSeed?.title.orEmpty()}…"
+                radioLoading && radioSeed != null -> "Finding songs related to ${radioSeed.title}…"
+                radioLoading -> "Finding fresh songs for the queue…"
                 radioSeed != null -> "Radio from ${radioSeed.title}"
-                else -> "Your play queue"
+                else -> "Autoplay · the queue keeps going"
             },
             color = Muted,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         if (following.isEmpty()) {
             if (radioLoading) CircularProgressIndicator(color = Cyan, modifier = Modifier.padding(24.dp))
-            else Text("No songs queued yet. Start radio or retry it from the player.", color = Muted, modifier = Modifier.padding(20.dp))
+            else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
             items(following, key = { it.id }) { track ->
                 TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, {})
+            }
+        }
+    }
+}
+
+@Composable private fun ArtistSearchResults(
+    query: String,
+    artists: List<MusicArtist>,
+    loading: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onOpenArtist: (MusicArtist) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Text("Artists", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        Text("Discography search · $query", color = Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
+        when {
+            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
+            error != null -> Column(Modifier.padding(20.dp)) {
+                Text(error, color = Muted)
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+            artists.isEmpty() -> Text("No artist pages found. Try the artist's full name.", color = Muted, modifier = Modifier.padding(20.dp))
+            else -> LazyColumn(contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp)) {
+                items(artists, key = { it.url }) { artist ->
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onOpenArtist(artist) }.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AsyncImage(artist.thumbnailUrl, null, Modifier.size(58.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(artist.name, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text("Open albums, singles & radio", color = Muted, fontSize = 12.sp)
+                        }
+                        Text("›", color = Cyan, fontSize = 26.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun ArtistDiscographyScreen(
+    discography: ArtistDiscography?,
+    loading: Boolean,
+    error: String?,
+    onRadio: () -> Unit,
+    onOpenRelease: (ArtistRelease) -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        if (discography != null) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                AsyncImage(discography.artist.thumbnailUrl, null, Modifier.size(82.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(discography.artist.name, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("Artist discography", color = Muted, fontSize = 13.sp)
+                }
+            }
+            TextButton(onClick = onRadio, modifier = Modifier.padding(horizontal = 12.dp)) {
+                Icon(Icons.Default.Radio, null, tint = Cyan)
+                Spacer(Modifier.width(8.dp))
+                Text("Artist radio", color = Cyan)
+            }
+            if (discography.artist.description.isNotBlank()) {
+                Text(discography.artist.description, color = Muted, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp))
+            }
+        }
+        when {
+            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
+            error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
+            discography == null || discography.releases.isEmpty() -> Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp))
+            else -> {
+                val sections = discography.releases.groupBy { releaseSection(it.kind) }
+                LazyColumn(contentPadding = PaddingValues(bottom = 20.dp)) {
+                    sections.forEach { (section, releases) ->
+                        item(key = "section:$section") {
+                            Text(section, color = Ink, fontSize = 19.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp))
+                        }
+                        items(releases, key = { it.url }) { release -> ArtistReleaseRow(release, onOpenRelease) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun releaseSection(kind: String): String = when {
+    kind.contains("single", ignoreCase = true) || kind.contains("ep", ignoreCase = true) -> "Singles & EPs"
+    kind.contains("album", ignoreCase = true) -> "Albums"
+    else -> kind.ifBlank { "Releases" }
+}
+
+@Composable private fun ArtistReleaseRow(release: ArtistRelease, onOpen: (ArtistRelease) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onOpen(release) }.padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncImage(release.thumbnailUrl, null, Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentScale = ContentScale.Crop)
+        Spacer(Modifier.width(13.dp))
+        Column(Modifier.weight(1f)) {
+            Text(release.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (release.trackCount > 0) "${release.kind} · ${release.trackCount} tracks" else release.kind, color = Muted, fontSize = 12.sp)
+        }
+        Text("›", color = Cyan, fontSize = 26.sp)
+    }
+}
+
+@Composable private fun ReleaseTracksScreen(
+    release: ArtistRelease,
+    artistName: String,
+    tracks: List<MusicTrack>,
+    loading: Boolean,
+    error: String?,
+    onPlayAll: () -> Unit,
+    onPlayTrack: (MusicTrack) -> Unit,
+    onAddRelease: () -> Unit,
+    onAddTrack: (MusicTrack) -> Unit,
+    onRadio: () -> Unit,
+) {
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(release.thumbnailUrl, null, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Raised), contentScale = ContentScale.Crop)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(release.title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text("$artistName · ${release.kind}", color = Muted, fontSize = 12.sp)
+            }
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+            TextButton(onClick = onPlayAll, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null, tint = Cyan); Text("Play release", color = Cyan) }
+            TextButton(onClick = onAddRelease, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlaylistAdd, null, tint = Cyan); Text("Add whole release", color = Cyan) }
+            TextButton(onClick = onRadio) { Icon(Icons.Default.Radio, null, tint = Cyan); Text("Artist radio", color = Cyan) }
+        }
+        when {
+            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
+            error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
+            tracks.isEmpty() -> Text("No tracks were found on this release.", color = Muted, modifier = Modifier.padding(20.dp))
+            else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
+                items(tracks, key = { it.id }) { track ->
+                    TrackRow(track, false, false, onPlayTrack, {}, { onRadio() }, onAddTrack)
+                }
             }
         }
     }
@@ -1152,6 +1401,7 @@ class MainActivity : ComponentActivity() {
     onLike: () -> Unit,
     onClose: () -> Unit,
     onSave: () -> Unit,
+    onArtist: () -> Unit,
     hasNext: Boolean,
 ) {
     var dragPosition by remember(track.id) { mutableStateOf<Float?>(null) }
@@ -1180,7 +1430,7 @@ class MainActivity : ComponentActivity() {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(track.title, color = Ink, fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
-                    Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                    Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
                 IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Ink) }
