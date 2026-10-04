@@ -1263,6 +1263,9 @@ class MainActivity : ComponentActivity() {
     val albums = remember(releases) {
         releases.filterNot(::isSingleRelease)
     }
+    val selectedReleaseTab = remember(releases) {
+        mutableIntStateOf(if (singles.isNotEmpty()) 1 else 0)
+    }
     val chronologicalReleases = remember(releases) {
         releases.withIndex()
             .sortedWith(compareByDescending<IndexedValue<ArtistRelease>> { it.value.year ?: Int.MIN_VALUE }.thenBy { it.index })
@@ -1307,44 +1310,53 @@ class MainActivity : ComponentActivity() {
             error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
             discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
-                if (singles.isNotEmpty()) {
-                    item(key = "singles-section-title") {
-                        Row(
-                            Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text("Singles & EPs", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                                Text("THE TRACKS THAT HIT ON THEIR OWN", color = Muted, fontSize = 10.sp, letterSpacing = 1.1.sp, modifier = Modifier.padding(top = 4.dp))
-                            }
-                            Text("${singles.size} RELEASES", color = Cyan, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
-                        }
-                    }
-                    item(key = "singles-carousel") {
-                        LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        ) {
-                            itemsIndexed(singles, key = { _, release -> "single:${release.url}" }) { index, release ->
-                                ArtistReleaseCard(release, index, isSingle = true, onOpen = onOpenRelease)
-                            }
-                        }
+                item(key = "release-tabs") {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 20.dp, end = 20.dp, top = 16.dp, bottom = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        FilterChip(
+                            selected = selectedReleaseTab.intValue == 0,
+                            onClick = { selectedReleaseTab.intValue = 0 },
+                            label = { Text("Albums · ${albums.size}") },
+                        )
+                        FilterChip(
+                            selected = selectedReleaseTab.intValue == 1,
+                            onClick = { selectedReleaseTab.intValue = 1 },
+                            label = { Text("Singles & EPs · ${singles.size}") },
+                        )
                     }
                 }
-                if (albums.isNotEmpty()) {
-                    item(key = "albums-section-title") {
-                        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 8.dp)) {
-                            Text("Albums", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                            Text("SWIPE TO EXPLORE  ·  HOLD A COVER TO FLIP", color = Muted, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 4.dp))
-                        }
+                val showingSingles = selectedReleaseTab.intValue == 1
+                val selectedReleases = if (showingSingles) singles else albums
+                item(key = if (showingSingles) "singles-section-title" else "albums-section-title") {
+                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 8.dp)) {
+                        Text(if (showingSingles) "Singles & EPs" else "Albums", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (showingSingles) "STANDALONE TRACKS · SINGLES · EPS" else "SWIPE TO EXPLORE  ·  HOLD A COVER TO FLIP",
+                            color = Muted,
+                            fontSize = 10.sp,
+                            letterSpacing = 1.1.sp,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
                     }
-                    item(key = "albums-carousel") {
+                }
+                if (selectedReleases.isEmpty()) {
+                    item(key = "release-tab-empty") {
+                        Text(
+                            if (showingSingles) "No singles or EPs were found for this artist." else "No albums were found for this artist.",
+                            color = Muted,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                    }
+                } else {
+                    item(key = if (showingSingles) "singles-carousel" else "albums-carousel") {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(if (showingSingles) 14.dp else 16.dp),
                         ) {
-                            itemsIndexed(albums, key = { _, release -> "album:${release.url}" }) { index, release ->
-                                ArtistReleaseCard(release, index, isSingle = false, onOpen = onOpenRelease)
+                            itemsIndexed(selectedReleases, key = { _, release -> "${if (showingSingles) "single" else "album"}:${release.url}" }) { index, release ->
+                                ArtistReleaseCard(release, index, isSingle = showingSingles, onOpen = onOpenRelease)
                             }
                         }
                     }

@@ -12,6 +12,9 @@ import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
@@ -72,12 +75,12 @@ class NewPipeMusicSource {
     }
 
     /** Artist tabs provide album and single playlists; load only their summaries here. */
-    fun loadArtistDiscography(artist: MusicArtist): ArtistDiscography {
+    suspend fun loadArtistDiscography(artist: MusicArtist): ArtistDiscography = coroutineScope {
         val cacheKey = artist.url.canonicalChannelUrl()
         val now = System.currentTimeMillis()
         discographyCache[cacheKey]
             ?.takeIf { now - it.loadedAtMillis < DISCOGRAPHY_CACHE_TTL_MS }
-            ?.let { return it.value }
+            ?.let { return@coroutineScope it.value }
 
         val channel = service.getChannelExtractor(artist.url)
         channel.fetchPage()
@@ -86,40 +89,48 @@ class NewPipeMusicSource {
             thumbnailUrl = channel.avatars.lastOrNull()?.url ?: artist.thumbnailUrl,
             description = channel.description.orEmpty(),
         )
-        val channelReleases = channel.tabs.flatMap { tab ->
-            runCatching {
-                val tabExtractor = service.getChannelTabExtractor(tab)
-                val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
-                val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
-                val isAlbumTab = tabName.contains("album", true)
-                if (!isSingleTab && !isAlbumTab) {
-                    emptyList()
-                } else {
-                    // The tab itself is scoped to this artist. Uploader labels can
-                    // contain featured artists or differ from the channel's display name.
-                    collectPlaylistItems(tabExtractor)
-                        .map { item ->
-                        ArtistRelease(
-                            title = item.name,
-                            url = item.url,
-                            thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
-                            trackCount = item.streamCount.coerceAtLeast(0),
-                            kind = releaseKind(item.name, item.streamCount, isSingleTab),
-                            year = releaseYear(item.name),
-                        )
+        val tabReleasesTask = async(Dispatchers.IO) {
+            channel.tabs.flatMap { tab ->
+                runCatching {
+                    val tabExtractor = service.getChannelTabExtractor(tab)
+                    val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
+                    val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
+                    val isAlbumTab = tabName.contains("album", true)
+                    if (!isSingleTab && !isAlbumTab) {
+                        emptyList()
+                    } else {
+                        // The tab itself is scoped to this artist. Uploader labels can
+                        // contain featured artists or differ from the channel's display name.
+                        collectPlaylistItems(tabExtractor).map { item ->
+                            ArtistRelease(
+                                title = item.name,
+                                url = item.url,
+                                thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                                trackCount = item.streamCount.coerceAtLeast(0),
+                                kind = releaseKind(item.name, item.streamCount, isSingleTab),
+                                year = releaseYear(item.name),
+                            )
+                        }
                     }
-                }
-            }.getOrDefault(emptyList())
-        }.distinctBy { it.url }
+                }.getOrDefault(emptyList())
+            }.distinctBy { it.url }
+        }
 
-        // Channel tabs can be incomplete or unavailable. Merge them with the
-        // artist's album search results so partial tabs do not hide releases.
-        val searchedAlbums = runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
-        val searchedSingles = runCatching { searchSingles(profile) }.getOrDefault(emptyList())
+        // Search endpoints supplement the channel catalog in parallel so a cold
+        // artist open does not wait for each remote source one after another.
+        val searchedAlbumsTask = async(Dispatchers.IO) {
+            runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
+        }
+        val searchedSinglesTask = async(Dispatchers.IO) {
+            runCatching { searchSingles(profile) }.getOrDefault(emptyList())
+        }
+        val channelReleases = tabReleasesTask.await()
+        val searchedAlbums = searchedAlbumsTask.await()
+        val searchedSingles = searchedSinglesTask.await()
         val releases = (channelReleases + searchedAlbums + searchedSingles)
             .distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
-        return ArtistDiscography(profile, releases).also { result ->
+        ArtistDiscography(profile, releases).also { result ->
             if (releases.isNotEmpty()) {
                 discographyCache[cacheKey] = CachedDiscography(now, result)
             }
