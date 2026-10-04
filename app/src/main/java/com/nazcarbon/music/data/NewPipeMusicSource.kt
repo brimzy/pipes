@@ -15,6 +15,7 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQu
 import org.json.JSONArray
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -110,7 +111,7 @@ class NewPipeMusicSource {
         // Fill album gaps when YouTube omits the album shelf link, and merge search
         // matches for standalone singles that may not be linked from the artist page.
         val searchedReleases = coroutineScope {
-            val albums = if (musicCatalog.none { it.kind == "Album" }) async(Dispatchers.IO) {
+            val albums: Deferred<List<ArtistRelease>>? = if (musicCatalog.none { it.kind == "Album" }) async(Dispatchers.IO) {
                 runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
             } else null
             val singles = async(Dispatchers.IO) {
