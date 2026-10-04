@@ -30,11 +30,17 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.media3.session.SessionCommand
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +60,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -61,6 +68,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -1293,15 +1302,18 @@ class MainActivity : ComponentActivity() {
             discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
                 item(key = "popular-releases-title") {
-                    Text("Albums & singles", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 12.dp))
+                    Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 8.dp)) {
+                        Text("Albums & singles", color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text("SWIPE TO EXPLORE  ·  HOLD A COVER TO FLIP", color = Muted, fontSize = 10.sp, letterSpacing = 1.2.sp, modifier = Modifier.padding(top = 4.dp))
+                    }
                 }
                 item(key = "release-carousel") {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        items(releases, key = { "carousel:${it.url}" }) { release ->
-                            ArtistReleaseCard(release, onOpenRelease)
+                        itemsIndexed(releases, key = { _, release -> "carousel:${release.url}" }) { index, release ->
+                            ArtistReleaseCard(release, index, onOpenRelease)
                         }
                     }
                 }
@@ -1324,24 +1336,122 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun ArtistReleaseCard(release: ArtistRelease, onOpen: (ArtistRelease) -> Unit) {
+@Composable private fun ArtistReleaseCard(release: ArtistRelease, index: Int, onOpen: (ArtistRelease) -> Unit) {
+    val interactionSource = remember(release.url) { MutableInteractionSource() }
+    val hovered by interactionSource.collectIsHoveredAsState()
+    var held by remember(release.url) { mutableStateOf(false) }
+    val flipped = hovered || held
+    val flipAngle by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (flipped) 180f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(420),
+        label = "album-flip",
+    )
+    val floatHeight by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (flipped) 12f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(280),
+        label = "album-float",
+    )
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (flipped) 1.035f else 1f,
+        animationSpec = androidx.compose.animation.core.tween(280),
+        label = "album-scale",
+    )
+    val idleFloat by androidx.compose.animation.core.rememberInfiniteTransition(label = "album-idle-float").animateFloat(
+        initialValue = if (index % 2 == 0) -4f else 4f,
+        targetValue = if (index % 2 == 0) 4f else -4f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+            animation = androidx.compose.animation.core.tween(durationMillis = 2400 + (index % 3) * 350),
+            repeatMode = androidx.compose.animation.core.RepeatMode.Reverse,
+        ),
+        label = "album-idle-offset",
+    )
+    val albumShape = RoundedCornerShape(25.dp)
+    val tilt = if (index % 2 == 0) -3f else 3f
+
     Column(
-        Modifier.width(172.dp)
-            .shadow(12.dp, RoundedCornerShape(26.dp), clip = false)
-            .clip(RoundedCornerShape(26.dp))
-            .background(Panel)
-            .clickable { onOpen(release) },
+        Modifier.width(232.dp)
+            .height(322.dp)
+            .hoverable(interactionSource)
+            .pointerInput(release.url) {
+                detectTapGestures(
+                    onPress = {
+                        held = true
+                        tryAwaitRelease()
+                        held = false
+                    },
+                    onTap = { onOpen(release) },
+                )
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Box(Modifier.fillMaxWidth().height(238.dp), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.size(220.dp)
+                    .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.22f), Color(0xFF6C4DFF).copy(alpha = 0.10f), Color.Transparent)), CircleShape),
+            )
+            VinylRecord(
+                Modifier.size(202.dp)
+                    .align(Alignment.Center)
+                    .offset(x = 18.dp)
+                    .graphicsLayer { rotationZ = -7f + (floatHeight + idleFloat) * 0.12f },
+                release.thumbnailUrl,
+            )
+            Box(
+                Modifier.size(194.dp)
+                    .align(Alignment.Center)
+                    .offset(x = (-11).dp, y = -(floatHeight + idleFloat).dp)
+                    .graphicsLayer {
+                        rotationY = flipAngle
+                        rotationZ = tilt - (floatHeight + idleFloat) * 0.08f
+                        scaleX = scale
+                        scaleY = scale
+                        cameraDistance = 18f * density
+                    }
+                    .shadow(25.dp, albumShape, clip = false)
+                    .clip(albumShape)
+                    .background(Raised),
+            ) {
+                if (flipAngle < 90f) {
+                    AsyncImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                } else {
+                    Column(
+                        Modifier.fillMaxSize()
+                            .graphicsLayer { rotationY = 180f }
+                            .background(Brush.linearGradient(listOf(Color(0xFF202C3B), Color(0xFF11161D), Color(0xFF172A35))))
+                            .padding(18.dp),
+                        verticalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Column {
+                            Text("NOW SPINNING", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                            Spacer(Modifier.height(12.dp))
+                            Text(release.title, color = Ink, fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, maxLines = 4, overflow = TextOverflow.Ellipsis)
+                        }
+                        Text(listOfNotNull(release.year?.toString(), release.kind, release.trackCount.takeIf { it > 0 }?.let { "$it tracks" }).joinToString("  ·  "), color = Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp).graphicsLayer { translationY = -(floatHeight + idleFloat) * density * 0.25f },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(release.title, color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(4.dp))
+            Text(listOfNotNull(release.year?.toString(), release.kind).joinToString("  ·  "), color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable private fun VinylRecord(modifier: Modifier, labelImage: String) {
+    Box(modifier.clip(CircleShape).background(Color(0xFF080A0D)), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(5.dp).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape))
+        Box(Modifier.fillMaxSize().padding(12.dp).border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape))
+        Box(Modifier.fillMaxSize().padding(20.dp).border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape))
         AsyncImage(
-            release.thumbnailUrl, null,
-            Modifier.fillMaxWidth().height(172.dp).background(Raised),
+            labelImage, null,
+            Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Color(0xFF080A0D), CircleShape),
             contentScale = ContentScale.Crop,
         )
-        Column(Modifier.padding(horizontal = 13.dp, vertical = 12.dp)) {
-            Text(release.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(listOfNotNull(release.year?.toString(), release.kind).joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
     }
 }
 
