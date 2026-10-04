@@ -368,11 +368,16 @@ class NewPipeMusicSource {
         val missingAlbums = (0 until releaseGroups.length()).mapNotNull { index ->
             val group = releaseGroups.optJSONObject(index) ?: return@mapNotNull null
             if (group.optString("primary-type") != "Album") return@mapNotNull null
+            val artistCredit = group.optJSONArray("artist-credit") ?: return@mapNotNull null
+            val creditedToArtist = (0 until artistCredit.length()).any { creditIndex ->
+                artistCredit.optJSONObject(creditIndex)?.optJSONObject("artist")?.optString("id") == artistId
+            }
+            if (!creditedToArtist) return@mapNotNull null
             val title = group.optString("title").trim()
             val key = title.catalogKey()
             if (title.isBlank() || key in knownAlbumKeys) return@mapNotNull null
             MusicBrainzAlbum(title, group.optString("first-release-date").take(4).toIntOrNull())
-        }.distinctBy { it.title.catalogKey() }.take(20)
+        }.distinctBy { it.title.catalogKey() }.take(40)
 
         return coroutineScope {
             missingAlbums.map { album -> async(Dispatchers.IO) {
@@ -391,10 +396,7 @@ class NewPipeMusicSource {
                                 year = album.year ?: releaseYear(item.name),
                             )
                         }
-                }.onFailure { error -> println("Indexed album lookup failed for ${album.title}: ${error.message}") }
-                    .getOrDefault(emptyList()).also { found ->
-                        println("Indexed album lookup ${album.title}: ${found.joinToString { it.title }}")
-                    }
+                }.getOrDefault(emptyList())
             } }.awaitAll().flatten().distinctBy { it.url }
         }
     }
