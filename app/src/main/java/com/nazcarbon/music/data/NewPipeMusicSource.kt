@@ -360,13 +360,17 @@ class NewPipeMusicSource {
         if (artistId.isBlank()) return emptyList()
 
         // MusicBrainz asks public clients to stay under one request per second.
-        delay(1_100)
-        val releaseGroups = musicBrainzGet(
-            "https://musicbrainz.org/ws/2/release-group/?query=${URLEncoder.encode("arid:$artistId AND primarytype:album", Charsets.UTF_8.name())}&fmt=json&limit=100",
-        ).optJSONArray("release-groups") ?: return emptyList()
+        val releaseGroups = mutableListOf<JSONObject>()
+        for (offset in listOf(0, 100, 200)) {
+            if (offset > 0) delay(1_100)
+            val page = musicBrainzGet(
+                "https://musicbrainz.org/ws/2/release-group/?artist=$artistId&fmt=json&limit=100&offset=$offset&type=album",
+            ).optJSONArray("release-groups") ?: continue
+            for (index in 0 until page.length()) page.optJSONObject(index)?.let(releaseGroups::add)
+            if (page.length() < 100) break
+        }
         val knownAlbumKeys = knownReleases.filter { it.kind == "Album" }.map { it.title.catalogKey() }.toSet()
-        val missingAlbums = (0 until releaseGroups.length()).mapNotNull { index ->
-            val group = releaseGroups.optJSONObject(index) ?: return@mapNotNull null
+        val missingAlbums = releaseGroups.mapNotNull { group ->
             if (group.optString("primary-type") != "Album") return@mapNotNull null
             val artistCredit = group.optJSONArray("artist-credit") ?: return@mapNotNull null
             val creditedToArtist = (0 until artistCredit.length()).any { creditIndex ->
