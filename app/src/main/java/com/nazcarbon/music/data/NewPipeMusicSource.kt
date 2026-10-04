@@ -104,18 +104,21 @@ class NewPipeMusicSource {
             } }.awaitAll().flatten().distinctBy { it.url }
         }
 
-        // Search endpoints supplement the channel catalog in parallel so a cold
-        // artist open does not wait for each remote source one after another.
-        val searchedAlbumsTask = async(Dispatchers.IO) {
-            runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
-        }
-        val searchedSinglesTask = async(Dispatchers.IO) {
-            runCatching { searchSingles(profile) }.getOrDefault(emptyList())
-        }
         val channelReleases = tabReleasesTask.await()
-        val searchedAlbums = searchedAlbumsTask.await()
-        val searchedSingles = searchedSinglesTask.await()
-        val releases = (channelReleases + searchedAlbums + searchedSingles)
+        // Channel release tabs are the complete artist catalog and paginate. Avoid
+        // global search fan-out when one is available; it is slower and ranks older
+        // releases below unrelated artists. Keep search as a fallback for channels
+        // whose extractor exposes no release tabs.
+        val searchedReleases = if (channelReleases.isEmpty()) coroutineScope {
+            val albums = async(Dispatchers.IO) {
+                runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
+            }
+            val singles = async(Dispatchers.IO) {
+                runCatching { searchSingles(profile) }.getOrDefault(emptyList())
+            }
+            albums.await() + singles.await()
+        } else emptyList()
+        val releases = (channelReleases + searchedReleases)
             .distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
         ArtistDiscography(profile, releases).also { result ->
@@ -134,7 +137,8 @@ class NewPipeMusicSource {
                 val tabName = tabExtractor.name.ifBlank { tab.contentFilters.joinToString(" ") }
                 val isSingleTab = tabName.contains("single", true) || tabName.contains("ep", true)
                 val isAlbumTab = tabName.contains("album", true)
-                if (!isSingleTab && !isAlbumTab) emptyList()
+                val isReleaseTab = tabName.contains("release", true)
+                if (!isSingleTab && !isAlbumTab && !isReleaseTab) emptyList()
                 else collectPlaylistItems(tabExtractor).map { item ->
                     ArtistRelease(
                         title = item.name,
