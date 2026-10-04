@@ -107,19 +107,19 @@ class NewPipeMusicSource {
                 } }.awaitAll().flatten().distinctBy { it.url }
             }.getOrDefault(emptyList())
         }.await()
-        // YouTube Music artist pages expose paginated Albums and Singles & EPs lists.
-        // Search is a fallback for artists whose browse metadata is unavailable.
-        val searchedReleases = if (musicCatalog.isEmpty()) coroutineScope {
-            val albums = async(Dispatchers.IO) {
+        // Fill album gaps when YouTube omits the album shelf link, and merge search
+        // matches for standalone singles that may not be linked from the artist page.
+        val searchedReleases = coroutineScope {
+            val albums = if (musicCatalog.none { it.kind == "Album" }) async(Dispatchers.IO) {
                 runCatching { searchAlbumReleases(profile) }.getOrDefault(emptyList())
-            }
+            } else null
             val singles = async(Dispatchers.IO) {
                 runCatching { searchSingles(profile) }.getOrDefault(emptyList())
             }
-            // Give the explicitly filtered Singles & EPs results category priority
-            // when a broad album search returns the same playlist URL.
-            singles.await() + albums.await()
-        } else emptyList()
+            // Give explicitly filtered Singles & EPs results category priority when
+            // the broader album search returns the same playlist URL.
+            singles.await() + (albums?.await().orEmpty())
+        }
         val releases = (musicCatalog + searchedReleases)
             .distinctBy { it.url }
             .sortedWith(compareByDescending<ArtistRelease> { it.year ?: Int.MIN_VALUE })
@@ -146,6 +146,18 @@ class NewPipeMusicSource {
             .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
+            .toMutableList()
+        val hasAlbumCarousel = carouselRenderers.any { shelf ->
+            val header = shelf.optJSONObject("header")
+            val basic = header?.optJSONObject("musicCarouselShelfBasicHeaderRenderer")
+            val title = basic?.optJSONObject("title")?.let(::textFromRuns).orEmpty()
+            title.contains("album", true)
+        }
+        if (hasAlbumCarousel && shelves.none { it.title.contains("album", true) }) {
+            // Some artist pages show a non-linked Albums carousel but still expose
+            // the corresponding full list under this browse ID.
+            shelves += ArtistReleaseShelf("Albums", "MPAL$channelId", "")
+        }
         if (artist.name.contains("kendrick", true)) {
             val rawShelves = carouselRenderers.joinToString { shelf ->
                 val header = shelf.optJSONObject("header")
@@ -157,7 +169,9 @@ class NewPipeMusicSource {
         }
         return coroutineScope {
             shelves.map { shelf -> async(Dispatchers.IO) {
-                runCatching { loadArtistReleaseShelf(shelf, context) }.getOrDefault(emptyList())
+                runCatching { loadArtistReleaseShelf(shelf, context) }
+                    .onFailure { error -> if (artist.name.contains("kendrick", true)) println("Shelf failed ${shelf.title}/${shelf.browseId}: ${error.message}") }
+                    .getOrDefault(emptyList())
             } }.awaitAll().flatten().distinctBy { it.url }
         }
     }
