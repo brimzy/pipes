@@ -41,6 +41,14 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging {
+        events("failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showStandardStreams = true
+    }
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.10.01")
     implementation(composeBom)
@@ -56,6 +64,7 @@ dependencies {
     implementation("androidx.media3:media3-session:1.8.0")
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.5")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
