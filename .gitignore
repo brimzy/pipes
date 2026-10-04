@@ -7,3 +7,4 @@ app/build/
 .DS_Store
 .run/
 .kotlin/
+.release-signing/
