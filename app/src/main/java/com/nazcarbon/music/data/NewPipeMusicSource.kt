@@ -141,11 +141,12 @@ class NewPipeMusicSource {
             .put("clientVersion", youtubeMusicClientVersion())
             .put("hl", "en").put("gl", "US"))
         val artistPage = youtubeMusicBrowse(JSONObject().put("browseId", channelId), context)
-        val shelves = findJsonObjects(artistPage, "musicCarouselShelfRenderer")
+        val carouselRenderers = findJsonObjects(artistPage, "musicCarouselShelfRenderer")
+        val shelves = carouselRenderers
             .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
-        if (artist.name.contains("kendrick", true)) println("Artist shelves ${artist.url}: ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}")
+        if (artist.name.contains("kendrick", true)) println("Artist shelves ${artist.url}: raw=${carouselRenderers.size}; ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}")
         return coroutineScope {
             shelves.map { shelf -> async(Dispatchers.IO) {
                 runCatching { loadArtistReleaseShelf(shelf, context) }.getOrDefault(emptyList())
@@ -156,9 +157,14 @@ class NewPipeMusicSource {
     private fun JSONObject.toArtistReleaseShelf(): ArtistReleaseShelf? {
         val header = optJSONObject("header") ?: return null
         val basicHeader = header.optJSONObject("musicCarouselShelfBasicHeaderRenderer") ?: return null
-        val title = basicHeader.optJSONObject("title")?.let(::textFromRuns).orEmpty()
-        val target = findBrowseEndpoint(basicHeader) ?: return null
-        return ArtistReleaseShelf(title, target.first, target.second)
+        val titleRenderer = basicHeader.optJSONObject("title") ?: return null
+        val title = textFromRuns(titleRenderer)
+        val browse = titleRenderer.optJSONObject("navigationEndpoint")?.optJSONObject("browseEndpoint")
+        val browseId = browse?.optString("browseId").orEmpty()
+        val params = browse?.optString("params").orEmpty()
+        if (browseId.isNotBlank() && params.isNotBlank()) return ArtistReleaseShelf(title, browseId, params)
+        val fallback = findBrowseEndpoint(basicHeader) ?: return null
+        return ArtistReleaseShelf(title, fallback.first, fallback.second)
     }
 
     private fun loadArtistReleaseShelf(
@@ -262,7 +268,7 @@ class NewPipeMusicSource {
                         if (key == "browseEndpoint" && child is JSONObject) {
                             val id = child.optString("browseId")
                             val params = child.optString("params")
-                            if (id.startsWith("UC") && params.isNotBlank()) return id to params
+                            if (id.isNotBlank() && params.isNotBlank()) return id to params
                         }
                         visit(child)?.let { return it }
                     }
