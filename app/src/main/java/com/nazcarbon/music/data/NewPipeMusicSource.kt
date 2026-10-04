@@ -131,6 +131,8 @@ class NewPipeMusicSource {
     private fun collectArtistTabReleases(artist: MusicArtist): List<ArtistRelease> {
         val channel = service.getChannelExtractor(artist.url)
         channel.fetchPage()
+        val debug = artist.name.contains("kendrick", true)
+        if (debug) println("Discography tabs for ${artist.url}: ${channel.tabs.joinToString { "${it.url} ${it.contentFilters}" }}")
         return channel.tabs.flatMap { tab ->
             runCatching {
                 val tabExtractor = service.getChannelTabExtractor(tab)
@@ -139,7 +141,9 @@ class NewPipeMusicSource {
                 val isAlbumTab = tabName.contains("album", true)
                 val isReleaseTab = tabName.contains("release", true)
                 if (!isSingleTab && !isAlbumTab && !isReleaseTab) emptyList()
-                else collectPlaylistItems(tabExtractor).map { item ->
+                else collectPlaylistItems(tabExtractor).also { items ->
+                    if (debug) println("Discography tab $tabName (${tab.url}) returned ${items.size}: ${items.joinToString { it.name }}")
+                }.map { item ->
                     ArtistRelease(
                         title = item.name,
                         url = item.url,
@@ -149,7 +153,8 @@ class NewPipeMusicSource {
                         year = releaseYear(item.name),
                     )
                 }
-            }.getOrDefault(emptyList())
+            }.onFailure { error -> if (debug) println("Discography tab failed ${tab.url}: ${error.message}") }
+                .getOrDefault(emptyList())
         }.distinctBy { it.url }
     }
 
