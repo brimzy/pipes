@@ -146,7 +146,7 @@ class NewPipeMusicSource {
         maxPages: Int = MAX_RELEASE_PAGES,
     ): List<PlaylistInfoItem> = collectItems(extractor, maxPages).filterIsInstance<PlaylistInfoItem>()
 
-    private fun collectStreamItems(extractor: ListExtractor<InfoItem>): List<StreamInfoItem> =
+    private fun collectStreamItems(extractor: ListExtractor<out InfoItem>): List<StreamInfoItem> =
         collectItems(extractor, MAX_RELEASE_PAGES).filterIsInstance<StreamInfoItem>()
 
     private fun PlaylistInfoItem.belongsTo(artist: MusicArtist): Boolean {
