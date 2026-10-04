@@ -377,9 +377,9 @@ class NewPipeMusicSource {
         return coroutineScope {
             missingAlbums.map { album -> async(Dispatchers.IO) {
                 runCatching {
-                    searchMusicAlbums("${artist.name} ${album.title}", maxPages = 1)
-                        // The exact indexed title disambiguates these targeted searches;
-                        // uploader attribution can differ for legacy artist channels.
+                    val expectedArtistName = artist.name.normalizedArtistName()
+                    searchMusicAlbums("${artist.name} ${album.title}", maxPages = 2)
+                        .filter { it.uploaderName.orEmpty().normalizedArtistName() == expectedArtistName }
                         .filter { it.name.isSameReleaseTitle(album.title) }
                         .map { item ->
                             ArtistRelease(
@@ -391,7 +391,10 @@ class NewPipeMusicSource {
                                 year = album.year ?: releaseYear(item.name),
                             )
                         }
-                }.getOrDefault(emptyList())
+                }.onFailure { error -> println("Indexed album lookup failed for ${album.title}: ${error.message}") }
+                    .getOrDefault(emptyList()).also { found ->
+                        println("Indexed album lookup ${album.title}: ${found.joinToString { it.title }}")
+                    }
             } }.awaitAll().flatten().distinctBy { it.url }
         }
     }
