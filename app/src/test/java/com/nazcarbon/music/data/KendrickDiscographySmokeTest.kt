@@ -34,11 +34,13 @@ class KendrickDiscographySmokeTest {
             "overlydedicated",
         )
         val missingAlbums = expectedAlbums.filterNot { expected -> albumTitles.any { it.contains(expected) } }
-        assertTrue("Missing expected Kendrick albums/mixtapes: $missingAlbums; found ${releases.joinToString { it.title }}", missingAlbums.isEmpty())
-
         val expectedSingles = listOf("notlikeus", "euphoria", "meetthegrahams", "heartpart5", "heartpart4", "humble", "hiiipower")
         val missingSingles = expectedSingles.filterNot { expected -> singleTitles.any { it.contains(expected) } }
-        assertTrue("Missing expected Kendrick singles: $missingSingles; found ${releases.joinToString { "${it.kind}: ${it.title}" }}", missingSingles.isEmpty())
+        assertTrue(
+            "Missing expected Kendrick albums/mixtapes: $missingAlbums; missing expected singles: $missingSingles; " +
+                "found ${releases.joinToString { "${it.kind}: ${it.title}" }}",
+            missingAlbums.isEmpty() && missingSingles.isEmpty(),
+        )
 
         val gnx = releases.firstOrNull { it.title.catalogKey().contains("gnx") && !isSingleRelease(it) }
             ?: error("GNX was missing; cannot verify the complete album track list")

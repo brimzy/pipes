@@ -97,7 +97,11 @@ class NewPipeMusicSource {
                     .plus(profile)
                     .distinctBy { it.url.canonicalChannelUrl() }
                 artistMatches.map { match -> async(Dispatchers.IO) {
-                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList())
+                    runCatching { loadYouTubeMusicArtistReleases(match) }.getOrDefault(emptyList()).also { found ->
+                        if (profile.name.contains("kendrick", true)) {
+                            println("Artist catalog ${match.url}: ${found.size} ${found.joinToString { it.title }}")
+                        }
+                    }
                 } }.awaitAll().flatten().distinctBy { it.url }
             }.getOrDefault(emptyList())
         }.await()
@@ -137,6 +141,7 @@ class NewPipeMusicSource {
             .mapNotNull { shelf -> shelf.toArtistReleaseShelf() }
             .filter { it.title.contains("album", true) || it.title.contains("single", true) || it.title.contains("EP", true) }
             .distinctBy { "${it.title.lowercase()}|${it.params}" }
+        if (artist.name.contains("kendrick", true)) println("Artist shelves ${artist.url}: ${shelves.joinToString { "${it.title} (${it.browseId}, ${it.params.take(10)})" }}")
         return coroutineScope {
             shelves.map { shelf -> async(Dispatchers.IO) {
                 runCatching { loadArtistReleaseShelf(shelf, context) }.getOrDefault(emptyList())
@@ -177,11 +182,10 @@ class NewPipeMusicSource {
                 }
                 if (url.isBlank()) continue
                 val subtitle = card.optJSONObject("subtitle")?.let(::textFromRuns).orEmpty()
-                val kind = when {
-                    Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(subtitle) -> "EP"
-                    shelf.title.contains("single", true) -> "Single"
-                    else -> "Album"
-                }
+                val isSinglesShelf = shelf.title.contains("single", true)
+                val kind = if (isSinglesShelf) {
+                    if (Regex("\\bEP\\b", RegexOption.IGNORE_CASE).containsMatchIn(subtitle)) "EP" else "Single"
+                } else "Album"
                 releases += ArtistRelease(
                     title = title,
                     url = url,
