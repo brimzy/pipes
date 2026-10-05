@@ -7,9 +7,9 @@ import androidx.compose.ui.graphics.Color
 
 // Neutral surfaces, with blue reserved for focus and selected controls.
 private val PipesScheme = darkColorScheme(
-    primary = Color(0xFF91B5D6),
+    primary = Color(0xFF04D1F9),
     onPrimary = Color(0xFF080808),
-    primaryContainer = Color(0xFF24282D),
+    primaryContainer = Color(0xFF242424),
     onPrimaryContainer = Color(0xFFF2F4F8),
     background = Color(0xFF080808),
     onBackground = Color(0xFFF2F4F8),
@@ -22,12 +22,12 @@ private val PipesScheme = darkColorScheme(
     surfaceContainerHigh = Color(0xFF202020),
     surfaceContainerHighest = Color(0xFF282828),
     onSurface = Color(0xFFF2F4F8),
-    onSurfaceVariant = Color(0xFFA2A2A2),
-    secondary = Color(0xFFD0D0D0),
+    onSurfaceVariant = Color(0xFFE6E8EC),
+    secondary = Color(0xFFF2F4F8),
     onSecondary = Color(0xFF080808),
     secondaryContainer = Color(0xFF252525),
     onSecondaryContainer = Color(0xFFF2F4F8),
-    tertiary = Color(0xFFB8B8B8),
+    tertiary = Color(0xFFE6E8EC),
     outline = Color(0xFF393939),
     outlineVariant = Color(0xFF282828),
 )
