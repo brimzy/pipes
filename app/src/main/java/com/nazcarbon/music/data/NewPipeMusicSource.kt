@@ -461,6 +461,10 @@ class NewPipeMusicSource {
             .maxByOrNull { it.averageBitrate }
             ?: error("YouTube returned no playable audio URL for this track")
         return track.copy(
+            title = streamExtractor.name.ifBlank { track.title },
+            artist = streamExtractor.uploaderName.ifBlank { track.artist },
+            durationSeconds = streamExtractor.length.coerceAtLeast(0),
+            thumbnailUrl = streamExtractor.thumbnails.lastOrNull()?.url ?: track.thumbnailUrl,
             streamUrl = audio.content,
             audioQuality = listOfNotNull(
                 audio.format?.name,

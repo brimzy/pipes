@@ -103,12 +103,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 
-private val Carbon = Color(0xFF090B0F)
-private val Panel = Color(0xFF11161D)
-private val Raised = Color(0xFF1B222C)
-private val Cyan = Color(0xFF04D1F9)
+private val Carbon = Color(0xFF080808)
+private val Panel = Color(0xFF121212)
+private val Raised = Color(0xFF202020)
+private val Accent = Color(0xFF91B5D6)
 private val Ink = Color(0xFFF2F4F8)
-private val Muted = Color(0xFF9BA2A8)
+private val Muted = Color(0xFFA2A2A2)
 
 private const val RADIO_METADATA_KEY = "pipes_radio"
 private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
@@ -168,7 +168,25 @@ class MainActivity : ComponentActivity() {
                 var likedArtists by remember {
                     mutableStateOf(prefs.getStringSet("liked_artists", emptySet())?.map { it.lowercase() }?.toSet().orEmpty())
                 }
-                val knownTracks = remember { mutableStateMapOf<String, MusicTrack>() }
+                val knownTracks = remember {
+                    mutableStateMapOf<String, MusicTrack>().apply {
+                        (PlaylistStore.load(prefs) + PlaylistStore.load(prefs, "saved_tracks"))
+                            .flatMap { it.tracks }.forEach { put(it.id, it) }
+                        // Older versions saved only IDs. Keep these songs visible and resolvable.
+                        likedIds.filterNot { containsKey(it) }.forEach { id ->
+                            put(id, MusicTrack(id, "Saved song", "Saved in an earlier version", 0, "", "", id))
+                        }
+                    }
+                }
+                var searchHistory by remember { mutableStateOf(com.nazcarbon.music.data.SearchHistory.decode(prefs.getString("search_history", "[]").orEmpty())) }
+                fun saveHistory(history: List<String>) {
+                    searchHistory = history
+                    prefs.edit().putString("search_history", com.nazcarbon.music.data.SearchHistory.encode(history)).apply()
+                }
+                // Persist metadata as it is recovered, without storing expiring stream URLs.
+                LaunchedEffect(knownTracks.toMap(), likedIds) {
+                    PlaylistStore.save(prefs, listOf(MusicPlaylist("Liked songs", likedIds.mapNotNull { knownTracks[it] })), "saved_tracks")
+                }
                 var current by remember { mutableStateOf<MusicTrack?>(null) }
                 var isPlaying by remember { mutableStateOf(false) }
                 var loading by remember { mutableStateOf(false) }
@@ -310,7 +328,10 @@ class MainActivity : ComponentActivity() {
 
                 val searchScope = rememberCoroutineScope()
                 val songSearch = remember {
-                    SongSearch(searchScope, { text -> withContext(Dispatchers.IO) { source.searchSongs(text) } }) { state ->
+                    SongSearch(searchScope, { text ->
+                        saveHistory(com.nazcarbon.music.data.SearchHistory.add(searchHistory, text))
+                        withContext(Dispatchers.IO) { source.searchSongs(text) }
+                    }) { state ->
                         results = state.tracks
                         loading = state.loading
                         searchError = state.error
@@ -537,7 +558,9 @@ class MainActivity : ComponentActivity() {
                 fun toggleLike(track: MusicTrack) {
                     val removing = track.id in likedIds
                     likedIds = if (removing) likedIds - track.id else likedIds + track.id
+                    knownTracks[track.id] = track
                     prefs.edit().putStringSet("liked", likedIds).apply()
+                    PlaylistStore.save(prefs, listOf(MusicPlaylist("Liked songs", likedIds.mapNotNull { knownTracks[it] })), "saved_tracks")
                     val artist = track.artist.lowercase()
                     val stillLiked = likedIds.any { knownTracks[it]?.artist?.equals(track.artist, ignoreCase = true) == true }
                     likedArtists = if (removing && !stillLiked) likedArtists - artist else likedArtists + artist
@@ -696,7 +719,9 @@ class MainActivity : ComponentActivity() {
                                 ::removeAudioDownload,
                                 { showNewPlaylistDialog = true },
                                 )
-                                "Search" -> SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) })
+                                "Search" -> if (query.isBlank()) SearchHistoryPanel(searchHistory, ::search,
+                                    { value -> saveHistory(searchHistory.filterNot { it == value }) }, { saveHistory(emptyList()) })
+                                else SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) })
                                 "Artist Search" -> ArtistSearchResults(artistQuery, artistResults, artistLoading, artistError, { findArtists(artistQuery) }, ::openArtist)
                                 "Artist" -> ArtistDiscographyScreen(
                                     selectedArtist,
@@ -742,7 +767,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { previousPage = page; page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }, position, duration) }
-                        if (page != "Now playing") BottomNav(page) { page = it }
+                        if (page != "Now playing") BottomNav(page) { if (it == "Search") search("") else page = it }
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
                     }
@@ -804,7 +829,7 @@ class MainActivity : ComponentActivity() {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("PIPES", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
             Spacer(Modifier.width(8.dp))
-            Text("MUSIC", color = Cyan, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
+            Text("3.0", color = Muted, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Muted) }
         }
@@ -817,13 +842,13 @@ class MainActivity : ComponentActivity() {
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); onSearch(query) }),
             trailingIcon = { Row {
-                IconButton(onClick = onLink) { Icon(Icons.Default.Link, "Search by link", tint = Cyan) }
+                IconButton(onClick = onLink) { Icon(Icons.Default.Link, "Search by link", tint = Muted) }
                 if (query.isNotEmpty()) IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Close, "Clear search") }
             } },
             placeholder = { Text("Songs, artists, albums", color = Muted, fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
             shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Cyan, unfocusedBorderColor = Raised, cursorColor = Cyan, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Raised, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
         )
         if (page == "Home") Spacer(Modifier.height(2.dp))
     }
@@ -833,27 +858,27 @@ class MainActivity : ComponentActivity() {
     LazyColumn(contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
         item {
             Spacer(Modifier.height(6.dp))
-            Text("Your music, in motion.", color = Ink, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            Text("Room for your music.", color = Ink, fontSize = 25.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Text("Your music. Your mood. Your rules.", color = Muted, fontSize = 13.sp)
+            Text("A little quieter. A little more you.", color = Muted, fontSize = 13.sp)
             Spacer(Modifier.height(22.dp))
-            Box(Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Brush.linearGradient(listOf(Color(0xFF12353C), Panel))).clickable { onSearch("indie pop") }) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Panel).border(1.dp, Raised, RoundedCornerShape(24.dp)).clickable { onSearch("indie pop") }) {
                 Column(Modifier.padding(24.dp).padding(end = 40.dp)) {
-                    Text("PIPES RADIO · 001", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                    Text("PIPES RADIO · 001", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                     Spacer(Modifier.height(10.dp))
                     Text("Your soft\nlanding.", color = Ink, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(8.dp))
                     Text("Dreamy indie for wherever you're headed.", color = Muted, fontSize = 11.sp)
                 }
                 Box(Modifier.align(Alignment.TopEnd).padding(16.dp).size(36.dp), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.MusicNote, null, tint = Cyan, modifier = Modifier.size(30.dp))
+                    Icon(Icons.Default.MusicNote, null, tint = Muted, modifier = Modifier.size(30.dp))
                 }
             }
         }
         if (current != null) item {
             Text("Keep the vibe going", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
-                items(listOf(current) + playlists.flatMap { it.tracks }.distinctBy { it.id }.take(12), key = { "home:${it.id}" }) { track ->
+                items((listOf(current) + playlists.flatMap { it.tracks }).distinctBy { it.id }.take(12), key = { "home:${it.id}" }) { track ->
                     Column(Modifier.width(140.dp).clickable { onSearch("${track.artist} ${track.title}") }) {
                         AsyncImage(track.thumbnailUrl, null, Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(Raised), contentScale = ContentScale.Crop)
                         Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
@@ -862,29 +887,57 @@ class MainActivity : ComponentActivity() {
                 }
             }
             TextButton(onClick = { onRadio(if (likedArtists.isNotEmpty()) "${likedArtists.take(3).joinToString(" ")} similar music" else "indie pop radio") }) {
-                Icon(Icons.Default.Radio, null, tint = Cyan); Spacer(Modifier.width(8.dp)); Text("Start a radio for your taste", color = Cyan)
+                Icon(Icons.Default.Radio, null, tint = Muted); Spacer(Modifier.width(8.dp)); Text("Start a radio for your taste", color = Ink)
             }
         }
         item { Text("Find your frequency", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
         items(listOf("indie pop", "late night r&b", "dream pop", "ambient focus", "new music")) { mood ->
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Panel).clickable { onSearch(mood) }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, tint = Cyan) }
+                Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, tint = Muted) }
                 Spacer(Modifier.width(13.dp)); Text(mood.replaceFirstChar { it.uppercase() }, color = Ink, fontWeight = FontWeight.Medium); Spacer(Modifier.weight(1f)); Text("↗", color = Muted)
             }
         }
     }
 }
 
+
+@Composable private fun SearchHistoryPanel(history: List<String>, onSearch: (String) -> Unit, onRemove: (String) -> Unit, onClear: () -> Unit) {
+    var confirmClear by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Recent searches", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (history.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Clear all") }
+        }
+        if (history.isEmpty()) Text("Find your next favorite. Your searches will appear here.", color = Muted, modifier = Modifier.padding(20.dp))
+        LazyColumn {
+            items(history, key = { it }) { query ->
+                Row(Modifier.fillMaxWidth().clickable { onSearch(query) }.padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Search, null, tint = Muted, modifier = Modifier.size(18.dp))
+                    Text(query, color = Ink, modifier = Modifier.weight(1f).padding(16.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    IconButton(onClick = { onRemove(query) }) { Icon(Icons.Default.Close, "Delete search: $query", tint = Muted) }
+                }
+            }
+        }
+    }
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false },
+        title = { Text("Clear search history?") },
+        text = { Text("This removes all recent searches from this device.") },
+        confirmButton = { TextButton(onClick = { onClear(); confirmClear = false }) { Text("Clear all") } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+    )
+}
+
 @Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onArtist: (String) -> Unit, onRetry: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         TextButton(onClick = { onArtist(query) }, enabled = query.isNotBlank(), modifier = Modifier.padding(horizontal = 12.dp)) {
-            Icon(Icons.Default.MusicNote, null, tint = Cyan)
+            Icon(Icons.Default.MusicNote, null, tint = Muted)
             Spacer(Modifier.width(8.dp))
-            Text(if (query.isBlank()) "Browse artist discography" else "Artist discography · $query", color = Cyan, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (query.isBlank()) "Browse artist discography" else "Artist discography · $query", color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         when {
-            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(35.dp))
+            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(35.dp))
             error != null -> Column(Modifier.padding(20.dp)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry search") }
@@ -903,10 +956,10 @@ class MainActivity : ComponentActivity() {
         AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
-            Text(track.title, color = if (active) Cyan else Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+            Text(track.title, color = if (active) Accent else Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
             Spacer(Modifier.height(4.dp)); Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.clickable(enabled = onArtist != null) { onArtist?.invoke(track.artist) })
         }
-        IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Muted) }
+        IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) Accent else Muted) }
         Box {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, "More options", tint = Muted) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
@@ -959,16 +1012,16 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Your library", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Cyan) }
+            IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Muted) }
         }
         Text("A collection built around you.", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan)) {
+            OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                 Icon(Icons.Default.MusicNote, null)
                 Spacer(Modifier.width(6.dp))
                 Text("Download audio", maxLines = 1)
             }
-            OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Cyan)) {
+            OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                 Icon(Icons.Default.FolderOpen, null)
                 Spacer(Modifier.width(6.dp))
                 Text("Categories", maxLines = 1)
@@ -982,7 +1035,7 @@ class MainActivity : ComponentActivity() {
         )
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
             item {
-                Text("DOWNLOADS · ${downloads.size}", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
+                Text("DOWNLOADS · ${downloads.size}", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
             if (categories.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1006,7 +1059,7 @@ class MainActivity : ComponentActivity() {
                 DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
             }
             item {
-                Text("PLAYLISTS", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
+                Text("PLAYLISTS", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
             if (playlists.isEmpty()) item {
                 Text("Save a song to create your Commute Mix.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1016,7 +1069,7 @@ class MainActivity : ComponentActivity() {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.QueueMusic, null, tint = Cyan)
+                        Icon(Icons.Default.QueueMusic, null, tint = Muted)
                     }
                     Spacer(Modifier.width(13.dp))
                     Column(Modifier.weight(1f)) {
@@ -1027,7 +1080,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Text("LIKED SONGS", color = Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
+                Text("LIKED SONGS", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
@@ -1089,7 +1142,7 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.MusicNote, null, tint = Cyan)
+                Icon(Icons.Default.MusicNote, null, tint = Muted)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -1102,7 +1155,7 @@ class MainActivity : ComponentActivity() {
                         status?.status == DownloadManager.STATUS_FAILED -> "Download failed · remove and retry"
                         else -> "Checking download…"
                     },
-                    color = if (ready) Cyan else Muted,
+                    color = if (ready) Accent else Muted,
                     fontSize = 11.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -1117,8 +1170,8 @@ class MainActivity : ComponentActivity() {
         }
         if (inProgress) {
             val progress = status?.progress
-            if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp), color = Cyan)
-            else LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 6.dp), color = Cyan)
+            if (progress == null) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp), color = Ink)
+            else LinearProgressIndicator({ progress }, Modifier.fillMaxWidth().padding(top = 6.dp), color = Ink)
         }
     }
 }
@@ -1201,7 +1254,7 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         if (following.isEmpty()) {
-            if (radioLoading) CircularProgressIndicator(color = Cyan, modifier = Modifier.padding(24.dp))
+            if (radioLoading) CircularProgressIndicator(color = Ink, modifier = Modifier.padding(24.dp))
             else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
             items(following, key = { it.id }) { track ->
@@ -1223,7 +1276,7 @@ class MainActivity : ComponentActivity() {
         Text("Artists", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         Text("Discography search · $query", color = Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         when {
-            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
+            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
             error != null -> Column(Modifier.padding(20.dp)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry") }
@@ -1241,7 +1294,7 @@ class MainActivity : ComponentActivity() {
                             Text(artist.name, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("Open albums, singles & radio", color = Muted, fontSize = 12.sp)
                         }
-                        Text("›", color = Cyan, fontSize = 26.sp)
+                        Text("›", color = Ink, fontSize = 26.sp)
                     }
                 }
             }
@@ -1294,9 +1347,9 @@ class MainActivity : ComponentActivity() {
             }
             item(key = "artist-radio") {
                 TextButton(onClick = onRadio, modifier = Modifier.padding(start = 10.dp)) {
-                    Icon(Icons.Default.Radio, null, tint = Cyan)
+                    Icon(Icons.Default.Radio, null, tint = Muted)
                     Spacer(Modifier.width(8.dp))
-                    Text("Artist radio", color = Cyan)
+                    Text("Artist radio", color = Ink)
                 }
             }
             if (discography.artist.description.isNotBlank()) {
@@ -1306,7 +1359,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         when {
-            loading -> item(key = "artist-loading") { CircularProgressIndicator(color = Cyan, modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
+            loading -> item(key = "artist-loading") { CircularProgressIndicator(color = Ink, modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
             error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
             discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
@@ -1374,9 +1427,9 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     release.kind.contains("single", true) || release.kind.contains("ep", true) || release.trackCount == 1L
 
 @Composable private fun VinylArtistArt(imageUrl: String, modifier: Modifier = Modifier) {
-    Box(modifier.clip(CircleShape).background(Color(0xFF090B0F)), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF232A34)), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF11161D)), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(CircleShape).background(Color(0xFF080808)), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF242424)), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF121212)), contentAlignment = Alignment.Center) {
                 AsyncImage(imageUrl, null, Modifier.fillMaxSize(0.62f).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
             }
         }
@@ -1440,7 +1493,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         Box(Modifier.fillMaxWidth().height(artWindowHeight), contentAlignment = Alignment.Center) {
             Box(
                 Modifier.size(glowSize)
-                    .background(Brush.radialGradient(listOf(Cyan.copy(alpha = 0.22f), Color(0xFF6C4DFF).copy(alpha = 0.10f), Color.Transparent)), CircleShape),
+                    .background(Brush.radialGradient(listOf(Ink.copy(alpha = 0.04f), Color.Transparent)), CircleShape),
             )
             VinylRecord(
                 Modifier.size(vinylSize)
@@ -1471,11 +1524,11 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                             Box(
                                 Modifier.align(Alignment.TopStart).padding(9.dp)
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color(0xDD090B0F))
-                                    .border(1.dp, Cyan.copy(alpha = 0.6f), RoundedCornerShape(50))
+                                    .background(Color(0xDD080808))
+                                    .border(1.dp, Ink.copy(alpha = 0.15f), RoundedCornerShape(50))
                                     .padding(horizontal = 9.dp, vertical = 5.dp),
                             ) {
-                                Text(if (release.kind.contains("ep", true) || release.trackCount > 1) "EP" else "SINGLE", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
+                                Text(if (release.kind.contains("ep", true) || release.trackCount > 1) "EP" else "SINGLE", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 1.sp)
                             }
                         }
                     }
@@ -1483,12 +1536,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Column(
                         Modifier.fillMaxSize()
                             .graphicsLayer { rotationY = 180f }
-                            .background(Brush.linearGradient(listOf(Color(0xFF202C3B), Color(0xFF11161D), Color(0xFF172A35))))
+                            .background(Brush.linearGradient(listOf(Raised, Panel)))
                             .padding(18.dp),
                         verticalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Column {
-                            Text(if (isSingle) "SINGLE DROP" else "NOW SPINNING", color = Cyan, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
+                            Text(if (isSingle) "SINGLE DROP" else "NOW SPINNING", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
                             Spacer(Modifier.height(12.dp))
                             Text(release.title, color = Ink, fontSize = 18.sp, lineHeight = 22.sp, fontWeight = FontWeight.Bold, maxLines = 4, overflow = TextOverflow.Ellipsis)
                         }
@@ -1509,13 +1562,13 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 }
 
 @Composable private fun VinylRecord(modifier: Modifier, labelImage: String) {
-    Box(modifier.clip(CircleShape).background(Color(0xFF080A0D)), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(CircleShape).background(Color(0xFF080808)), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize().padding(5.dp).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape))
         Box(Modifier.fillMaxSize().padding(12.dp).border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape))
         Box(Modifier.fillMaxSize().padding(20.dp).border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape))
         AsyncImage(
             labelImage, null,
-            Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Color(0xFF080A0D), CircleShape),
+            Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Color(0xFF080808), CircleShape),
             contentScale = ContentScale.Crop,
         )
     }
@@ -1533,7 +1586,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             val details = listOfNotNull(release.year?.toString(), release.kind, release.trackCount.takeIf { it > 0 }?.let { "$it tracks" })
             Text(details.joinToString(" · "), color = Muted, fontSize = 12.sp)
         }
-        Text("›", color = Cyan, fontSize = 26.sp)
+        Text("›", color = Ink, fontSize = 26.sp)
     }
 }
 
@@ -1559,12 +1612,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             }
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-            TextButton(onClick = onPlayAll, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null, tint = Cyan); Text("Play release", color = Cyan) }
-            TextButton(onClick = onAddRelease, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlaylistAdd, null, tint = Cyan); Text("Add whole release", color = Cyan) }
-            TextButton(onClick = onRadio) { Icon(Icons.Default.Radio, null, tint = Cyan); Text("Artist radio", color = Cyan) }
+            TextButton(onClick = onPlayAll, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null, tint = Muted); Text("Play release", color = Ink) }
+            TextButton(onClick = onAddRelease, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlaylistAdd, null, tint = Muted); Text("Add whole release", color = Ink) }
+            TextButton(onClick = onRadio) { Icon(Icons.Default.Radio, null, tint = Muted); Text("Artist radio", color = Ink) }
         }
         when {
-            loading -> CircularProgressIndicator(color = Cyan, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
+            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
             error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
             tracks.isEmpty() -> Text("No tracks were found on this release.", color = Muted, modifier = Modifier.padding(20.dp))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
@@ -1582,7 +1635,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         Text("Go where the music takes you.", color = Muted, modifier = Modifier.padding(top = 5.dp, bottom = 20.dp))
         listOf("Indie essentials", "R&B after dark", "Electronic", "Quiet focus", "New & trending").forEachIndexed { index, label ->
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Raised).clickable { onSearch(listOf("indie pop", "r&b", "electronic music", "ambient focus", "new music")[index]) }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(listOf("♫", "◉", "▣", "☷", "✳")[index], color = Cyan, fontSize = 20.sp); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Text("→", color = Muted)
+                Text(listOf("♫", "◉", "▣", "☷", "✳")[index], color = Ink, fontSize = 20.sp); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, fontWeight = FontWeight.SemiBold); Spacer(Modifier.weight(1f)); Text("→", color = Muted)
             }
         }
     }
@@ -1590,7 +1643,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 
 @Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit, position: Long, duration: Long) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(Raised).clickable(onClick = expand)) {
-        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.15f)
+        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.04f)
         Column {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(track.thumbnailUrl, null, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentScale = ContentScale.Crop)
@@ -1599,12 +1652,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Text(track.artist, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (liked) Icon(Icons.Default.Favorite, "Liked", tint = Cyan, modifier = Modifier.size(16.dp))
+                if (liked) Icon(Icons.Default.Favorite, "Liked", tint = Muted, modifier = Modifier.size(16.dp))
                 IconButton(onClick = toggle) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", tint = Ink) }
                 IconButton(onClick = next) { Icon(Icons.Default.SkipNext, "Next song", tint = Ink) }
             }
             LinearProgressIndicator(progress = { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f },
-                modifier = Modifier.fillMaxWidth().height(2.dp), color = Cyan, trackColor = Ink.copy(alpha = 0.08f))
+                modifier = Modifier.fillMaxWidth().height(2.dp), color = Accent, trackColor = Ink.copy(alpha = 0.08f))
         }
     }
 }
@@ -1641,7 +1694,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
         val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
-        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.28f)
+        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.10f)
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.35f), Carbon.copy(alpha = 0.80f), Carbon))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
@@ -1665,18 +1718,18 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
                 IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    if (liked) "Unlike song" else "Like song", tint = if (liked) Cyan else Ink) }
+                    if (liked) "Unlike song" else "Like song", tint = if (liked) Accent else Ink) }
             }
             Spacer(Modifier.height(10.dp))
             Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
-                color = Cyan, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
+                color = Ink, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
             Slider(
                 value = progress.coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
                 onValueChange = { dragPosition = it },
                 onValueChangeFinished = { dragPosition?.let { onSeek(it.toLong()) }; dragPosition = null },
                 valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
                 enabled = seekable && duration > 0,
-                colors = SliderDefaults.colors(thumbColor = Ink, activeTrackColor = Cyan, inactiveTrackColor = Ink.copy(alpha = 0.15f)),
+                colors = SliderDefaults.colors(thumbColor = Ink, activeTrackColor = Accent, inactiveTrackColor = Ink.copy(alpha = 0.15f)),
                 modifier = Modifier.fillMaxWidth(),
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1685,7 +1738,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Cyan else Muted) }
+                IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Muted) }
                 IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
                 FilledIconButton(onClick = toggle, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Ink, contentColor = Carbon), modifier = Modifier.size(68.dp)) {
                     if (buffering) CircularProgressIndicator(Modifier.size(28.dp), color = Carbon, strokeWidth = 2.dp)
@@ -1694,7 +1747,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
                 IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                     "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
-                    tint = if (repeat != Player.REPEAT_MODE_OFF) Cyan else Muted) }
+                    tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Muted) }
             }
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.copy(alpha = 0.06f)), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -1717,8 +1770,8 @@ private fun playbackTime(milliseconds: Long): String {
 
 @Composable private fun BottomNav(page: String, onSelect: (String) -> Unit) {
     NavigationBar(containerColor = Carbon, contentColor = Ink, windowInsets = WindowInsets(0, 0, 0, 0)) {
-        listOf(Triple("Home", Icons.Default.Home, "Home"), Triple("Explore", Icons.Default.Explore, "Explore"), Triple("Library", Icons.Default.LibraryMusic, "Library")).forEach { (label, icon, target) ->
-            NavigationBarItem(selected = page == target, onClick = { onSelect(target) }, icon = { Icon(icon, null) }, label = { Text(label, fontSize = 10.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Cyan, selectedTextColor = Cyan, indicatorColor = Raised, unselectedIconColor = Muted, unselectedTextColor = Muted))
+        listOf(Triple("Home", Icons.Default.Home, "Home"), Triple("Search", Icons.Default.Search, "Search"), Triple("Explore", Icons.Default.Explore, "Explore"), Triple("Library", Icons.Default.LibraryMusic, "Library")).forEach { (label, icon, target) ->
+            NavigationBarItem(selected = page == target, onClick = { onSelect(target) }, icon = { Icon(icon, null) }, label = { Text(label, fontSize = 10.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Accent, selectedTextColor = Ink, indicatorColor = Raised, unselectedIconColor = Muted, unselectedTextColor = Muted))
         }
     }
 }

@@ -23,8 +23,8 @@ android {
         applicationId = "com.nazcarbon.music"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.gradleProperty("versionCodeOverride").orNull?.toInt() ?: 5
-        versionName = "2.3"
+        versionCode = providers.gradleProperty("versionCodeOverride").orNull?.toInt() ?: 30000
+        versionName = "3.0"
     }
 
     buildTypes {
