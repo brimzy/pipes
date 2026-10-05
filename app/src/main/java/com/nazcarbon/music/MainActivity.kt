@@ -94,6 +94,7 @@ import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
 import com.nazcarbon.music.data.PlaylistStore
 import com.nazcarbon.music.ui.theme.PipesTheme
+import com.nazcarbon.music.ui.theme.PipesPalette
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
@@ -103,12 +104,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
 
-private val Carbon = Color(0xFF080808)
-private val Panel = Color(0xFF121212)
-private val Raised = Color(0xFF202020)
-private val Accent = Color(0xFF04D1F9)
-private val Ink = Color(0xFFF2F4F8)
-private val Muted = Color(0xFFA2A2A2)
+private val Carbon = PipesPalette.Background
+private val Panel = PipesPalette.Card
+private val Raised = PipesPalette.Raised
+private val Accent = PipesPalette.Accent
+private val Ink = PipesPalette.Text
+private val Muted = PipesPalette.TextSoft
 
 private const val RADIO_METADATA_KEY = "pipes_radio"
 private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
@@ -1427,9 +1428,9 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     release.kind.contains("single", true) || release.kind.contains("ep", true) || release.trackCount == 1L
 
 @Composable private fun VinylArtistArt(imageUrl: String, modifier: Modifier = Modifier) {
-    Box(modifier.clip(CircleShape).background(Color(0xFF080808)), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF242424)), contentAlignment = Alignment.Center) {
-            Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Color(0xFF121212)), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(CircleShape).background(Carbon), contentAlignment = Alignment.Center) {
+        Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Raised), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
                 AsyncImage(imageUrl, null, Modifier.fillMaxSize(0.62f).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
             }
         }
@@ -1524,7 +1525,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                             Box(
                                 Modifier.align(Alignment.TopStart).padding(9.dp)
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color(0xDD080808))
+                                    .background(Carbon.copy(alpha = 0.87f))
                                     .border(1.dp, Ink.copy(alpha = 0.15f), RoundedCornerShape(50))
                                     .padding(horizontal = 9.dp, vertical = 5.dp),
                             ) {
@@ -1562,13 +1563,13 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 }
 
 @Composable private fun VinylRecord(modifier: Modifier, labelImage: String) {
-    Box(modifier.clip(CircleShape).background(Color(0xFF080808)), contentAlignment = Alignment.Center) {
+    Box(modifier.clip(CircleShape).background(Carbon), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize().padding(5.dp).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape))
         Box(Modifier.fillMaxSize().padding(12.dp).border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape))
         Box(Modifier.fillMaxSize().padding(20.dp).border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape))
         AsyncImage(
             labelImage, null,
-            Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Color(0xFF080808), CircleShape),
+            Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Carbon, CircleShape),
             contentScale = ContentScale.Crop,
         )
     }

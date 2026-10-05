@@ -5,31 +5,41 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// Neutral surfaces, with blue reserved for focus and selected controls.
+// NazCarbon DashboardView.qml: black canvas, near-black cards, off-white content.
+object PipesPalette {
+    val Background = Color(0xFF000000)
+    val Card = Color(0xFF090909)
+    val Raised = Color(0xFF111111)
+    val Line = Color(0xFF262626)
+    val Text = Color(0xFFF2F4F8)
+    val TextSoft = Color(0xFFDDE1E6)
+    val Accent = Color(0xFF04D1F9)
+}
+
 private val PipesScheme = darkColorScheme(
-    primary = Color(0xFF04D1F9),
-    onPrimary = Color(0xFF080808),
-    primaryContainer = Color(0xFF242424),
-    onPrimaryContainer = Color(0xFFF2F4F8),
-    background = Color(0xFF080808),
-    onBackground = Color(0xFFF2F4F8),
-    surface = Color(0xFF121212),
-    surfaceVariant = Color(0xFF202020),
+    primary = PipesPalette.Accent,
+    onPrimary = PipesPalette.Background,
+    primaryContainer = PipesPalette.Raised,
+    onPrimaryContainer = PipesPalette.Text,
+    background = PipesPalette.Background,
+    onBackground = PipesPalette.Text,
+    surface = PipesPalette.Card,
+    surfaceVariant = PipesPalette.Raised,
     surfaceTint = Color.Transparent,
-    surfaceContainerLowest = Color(0xFF080808),
-    surfaceContainerLow = Color(0xFF121212),
-    surfaceContainer = Color(0xFF181818),
-    surfaceContainerHigh = Color(0xFF202020),
-    surfaceContainerHighest = Color(0xFF282828),
-    onSurface = Color(0xFFF2F4F8),
-    onSurfaceVariant = Color(0xFFE6E8EC),
-    secondary = Color(0xFFF2F4F8),
-    onSecondary = Color(0xFF080808),
-    secondaryContainer = Color(0xFF252525),
-    onSecondaryContainer = Color(0xFFF2F4F8),
-    tertiary = Color(0xFFE6E8EC),
-    outline = Color(0xFF393939),
-    outlineVariant = Color(0xFF282828),
+    surfaceContainerLowest = PipesPalette.Background,
+    surfaceContainerLow = PipesPalette.Card,
+    surfaceContainer = PipesPalette.Card,
+    surfaceContainerHigh = PipesPalette.Raised,
+    surfaceContainerHighest = Color(0xFF161616),
+    onSurface = PipesPalette.Text,
+    onSurfaceVariant = PipesPalette.TextSoft,
+    secondary = PipesPalette.Text,
+    onSecondary = PipesPalette.Background,
+    secondaryContainer = PipesPalette.Raised,
+    onSecondaryContainer = PipesPalette.Text,
+    tertiary = PipesPalette.TextSoft,
+    outline = PipesPalette.Line,
+    outlineVariant = PipesPalette.Raised,
 )
 
 @Composable
