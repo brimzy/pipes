@@ -25,4 +25,22 @@ class SpotifyLinksTest {
         assertEquals("The Weeknd", SpotifyLinks.artistFromPage("<title>Blinding Lights - song and lyrics by The Weeknd | Spotify</title>"))
         assertEquals("Artist & Friend", SpotifyLinks.artistFromPage("<title>Song - song by Artist &amp; Friend | Spotify</title>"))
     }
+
+    @Test fun `public playlist rows become importable searches`() {
+        val html = """
+            <meta property="og:title" content="girlypop"/>
+            <meta property="og:description" content="Playlist · nj · 128 items"/>
+            <div data-testid="track-row">
+              <a href="/track/1DwscornXpj8fmOmYVlqZt">
+                <p data-encore-id="listRowTitle"><span>Stateside + Zara Larsson</span></p>
+              </a>
+              <span data-testid="internal-artist-link"><a href="/artist/test">PinkPantheress</a></span>
+            </div>
+        """.trimIndent()
+
+        val playlist = SpotifyPlaylists.parsePage(html)
+        assertEquals("girlypop", playlist.name)
+        assertEquals(128, playlist.totalTracks)
+        assertEquals(listOf(SpotifyPlaylistTrack("Stateside + Zara Larsson", "PinkPantheress")), playlist.tracks)
+    }
 }

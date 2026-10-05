@@ -84,6 +84,7 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.SpotifyLinks
+import com.nazcarbon.music.data.SpotifyPlaylists
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.AudioDownloads
@@ -100,6 +101,9 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -343,7 +347,47 @@ class MainActivity : ComponentActivity() {
                         state.tracks.forEach { knownTracks[it.id] = it }
                     }
                 }
+                fun importSpotifyPlaylist(text: String) {
+                    query = text
+                    page = "Search"
+                    loading = true
+                    searchError = null
+                    lifecycleScope.launch {
+                        runCatching {
+                            val preview = withContext(Dispatchers.IO) { SpotifyPlaylists.load(text) }
+                            val imported = preview.tracks.chunked(4).flatMap { group ->
+                                coroutineScope {
+                                    group.map { spotifyTrack -> async(Dispatchers.IO) {
+                                        runCatching {
+                                            source.searchSongs("${spotifyTrack.title} ${spotifyTrack.artist}").firstOrNull()
+                                        }.getOrNull()
+                                    } }.awaitAll()
+                                }
+                            }.filterNotNull().distinctBy { it.id }
+                            require(imported.isNotEmpty()) { "No playable matches were found in this Spotify playlist." }
+                            Triple(preview, imported, MusicPlaylist(preview.name, imported))
+                        }.onSuccess { (preview, imported, playlist) ->
+                            imported.forEach { knownTracks[it.id] = it }
+                            playlists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
+                                playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist else it }
+                            } else playlists + playlist
+                            PlaylistStore.save(prefs, playlists)
+                            selectedPlaylist = playlist.name
+                            page = "Playlist"
+                            notice = if (preview.totalTracks > preview.tracks.size) {
+                                "Imported ${imported.size} playable songs · Spotify exposed ${preview.tracks.size} of ${preview.totalTracks}"
+                            } else "Imported ${imported.size} playable songs"
+                        }.onFailure { failure ->
+                            searchError = failure.message ?: "Couldn't import this Spotify playlist."
+                        }
+                        loading = false
+                    }
+                }
                 fun search(text: String) {
+                    if (SpotifyPlaylists.isPlaylistLink(text)) {
+                        importSpotifyPlaylist(text)
+                        return
+                    }
                     query = text
                     page = "Search"
                     songSearch.submit(text)
@@ -466,12 +510,15 @@ class MainActivity : ComponentActivity() {
                         previousPage = page
                         play(track)
                         page = "Now playing"
+                    } else if (SpotifyPlaylists.isPlaylistLink(value)) {
+                        showLinkDialog = false
+                        importSpotifyPlaylist(value)
                     } else if (SpotifyLinks.isSpotifyLink(value)) {
                         showLinkDialog = false
                         search(value)
                     } else {
                         showLinkDialog = false
-                        notice = "Paste a YouTube video or Spotify song link."
+                        notice = "Paste a YouTube video or Spotify song or playlist link."
                     }
                 }
 
@@ -790,7 +837,7 @@ class MainActivity : ComponentActivity() {
                 if (showLinkDialog) AlertDialog(
                     onDismissRequest = { showLinkDialog = false },
                     title = { Text("Open a link") },
-                    text = { OutlinedTextField(linkText, { linkText = it }, label = { Text("YouTube video or Spotify song link") }, singleLine = true) },
+                    text = { OutlinedTextField(linkText, { linkText = it }, label = { Text("YouTube video or Spotify song/playlist") }, singleLine = true) },
                     confirmButton = { TextButton(onClick = { openLink(linkText) }) { Text("Open") } },
                     dismissButton = { TextButton(onClick = { showLinkDialog = false }) { Text("Cancel") } },
                 )

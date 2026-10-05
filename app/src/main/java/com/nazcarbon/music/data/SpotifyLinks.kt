@@ -6,7 +6,7 @@ import java.net.URI
 import java.net.URLEncoder
 import java.net.URL
 
-/** Resolves a Spotify track link to words that can be searched in the playable catalog. */
+/** Reads public Spotify link metadata so Pipes can find playable catalog matches. */
 object SpotifyLinks {
     private val trackId = Regex("[A-Za-z0-9]{22}")
 
