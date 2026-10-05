@@ -83,6 +83,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
+import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.AudioDownloads
@@ -330,8 +331,11 @@ class MainActivity : ComponentActivity() {
                 val searchScope = rememberCoroutineScope()
                 val songSearch = remember {
                     SongSearch(searchScope, { text ->
-                        saveHistory(com.nazcarbon.music.data.SearchHistory.add(searchHistory, text))
-                        withContext(Dispatchers.IO) { source.searchSongs(text) }
+                        val terms = withContext(Dispatchers.IO) {
+                            if (SpotifyLinks.isSpotifyLink(text)) SpotifyLinks.searchQuery(text) else text
+                        }
+                        saveHistory(com.nazcarbon.music.data.SearchHistory.add(searchHistory, terms))
+                        withContext(Dispatchers.IO) { source.searchSongs(terms) }
                     }) { state ->
                         results = state.tracks
                         loading = state.loading
@@ -462,9 +466,12 @@ class MainActivity : ComponentActivity() {
                         previousPage = page
                         play(track)
                         page = "Now playing"
+                    } else if (SpotifyLinks.isSpotifyLink(value)) {
+                        showLinkDialog = false
+                        search(value)
                     } else {
                         showLinkDialog = false
-                        notice = "Paste a YouTube video link to play it as audio. Spotify links need a title search for now."
+                        notice = "Paste a YouTube video or Spotify song link."
                     }
                 }
 
@@ -782,9 +789,9 @@ class MainActivity : ComponentActivity() {
                 }
                 if (showLinkDialog) AlertDialog(
                     onDismissRequest = { showLinkDialog = false },
-                    title = { Text("Play from a link") },
-                    text = { OutlinedTextField(linkText, { linkText = it }, label = { Text("YouTube or Spotify link") }, singleLine = true) },
-                    confirmButton = { TextButton(onClick = { openLink(linkText) }) { Text("Find and play") } },
+                    title = { Text("Open a link") },
+                    text = { OutlinedTextField(linkText, { linkText = it }, label = { Text("YouTube video or Spotify song link") }, singleLine = true) },
+                    confirmButton = { TextButton(onClick = { openLink(linkText) }) { Text("Open") } },
                     dismissButton = { TextButton(onClick = { showLinkDialog = false }) { Text("Cancel") } },
                 )
                 if (showNewPlaylistDialog) AlertDialog(

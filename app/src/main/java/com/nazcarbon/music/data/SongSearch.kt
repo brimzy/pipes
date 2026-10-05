@@ -28,8 +28,10 @@ class SongSearch(
                 if (request == generation) update(State(tracks.distinctBy { it.id }))
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
-                if (request == generation) update(State(error = "Search couldn't load. Check your connection and retry."))
+            } catch (failure: Exception) {
+                if (request == generation) update(State(error = if (failure is IllegalArgumentException) {
+                    failure.message ?: "That link couldn't be read."
+                } else "Search couldn't load. Check your connection and retry."))
             }
         }
     }
