@@ -85,6 +85,8 @@ import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.SpotifyPlaylists
+import com.nazcarbon.music.data.SpotifyAuth
+import com.nazcarbon.music.data.SpotifyPlaylistApi
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.AudioDownloads
@@ -101,9 +103,6 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -354,29 +353,36 @@ class MainActivity : ComponentActivity() {
                     searchError = null
                     lifecycleScope.launch {
                         runCatching {
-                            val preview = withContext(Dispatchers.IO) { SpotifyPlaylists.load(text) }
-                            val imported = preview.tracks.chunked(4).flatMap { group ->
-                                coroutineScope {
-                                    group.map { spotifyTrack -> async(Dispatchers.IO) {
-                                        runCatching {
-                                            source.searchSongs("${spotifyTrack.title} ${spotifyTrack.artist}").firstOrNull()
-                                        }.getOrNull()
-                                    } }.awaitAll()
-                                }
-                            }.filterNotNull().distinctBy { it.id }
-                            require(imported.isNotEmpty()) { "No playable matches were found in this Spotify playlist." }
-                            Triple(preview, imported, MusicPlaylist(preview.name, imported))
-                        }.onSuccess { (preview, imported, playlist) ->
-                            imported.forEach { knownTracks[it.id] = it }
-                            playlists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
+                            val playlistId = SpotifyPlaylists.playlistId(text)
+                            val token = SpotifyAuth(this@MainActivity).getAccessToken()
+                            val spotifyPlaylist = withContext(Dispatchers.IO) { SpotifyPlaylistApi.load(token, playlistId) }
+                            val imported = spotifyPlaylist.tracks.map { spotifyTrack ->
+                                MusicTrack(
+                                    id = "spotify:${spotifyTrack.id}:${spotifyTrack.position}",
+                                    title = spotifyTrack.title,
+                                    artist = spotifyTrack.artist,
+                                    durationSeconds = 0,
+                                    thumbnailUrl = "",
+                                    streamUrl = "",
+                                    pageUrl = "spotify-search:${spotifyTrack.id}",
+                                )
+                            }
+                            require(imported.isNotEmpty()) { "This Spotify playlist has no playable music tracks." }
+                            val playlist = MusicPlaylist(spotifyPlaylist.name, imported)
+                            val updatedPlaylists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
                                 playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist else it }
                             } else playlists + playlist
-                            PlaylistStore.save(prefs, playlists)
+                            withContext(Dispatchers.IO) { PlaylistStore.save(prefs, updatedPlaylists) }
+                            Triple(spotifyPlaylist, imported, playlist) to updatedPlaylists
+                        }.onSuccess { (result, updatedPlaylists) ->
+                            val (spotifyPlaylist, imported, playlist) = result
+                            imported.forEach { knownTracks[it.id] = it }
+                            playlists = updatedPlaylists
                             selectedPlaylist = playlist.name
                             page = "Playlist"
-                            notice = if (preview.totalTracks > preview.tracks.size) {
-                                "Imported ${imported.size} playable songs · Spotify exposed ${preview.tracks.size} of ${preview.totalTracks}"
-                            } else "Imported ${imported.size} playable songs"
+                            notice = if (spotifyPlaylist.totalTracks > imported.size) {
+                                "Imported ${imported.size} of ${spotifyPlaylist.totalTracks} Spotify items"
+                            } else "Imported ${imported.size} Spotify songs"
                         }.onFailure { failure ->
                             searchError = failure.message ?: "Couldn't import this Spotify playlist."
                         }
@@ -459,6 +465,18 @@ class MainActivity : ComponentActivity() {
                     notice = "Playlist deleted"
                 }
 
+                suspend fun resolveForPlayback(track: MusicTrack): MusicTrack = withContext(Dispatchers.IO) {
+                    when {
+                        track.pageUrl.startsWith("content://") -> track.copy(streamUrl = track.pageUrl)
+                        track.pageUrl.startsWith("spotify-search:") -> {
+                            val match = source.searchSongs("${track.title} ${track.artist}").firstOrNull()
+                                ?: error("Couldn't find a playable match for ${track.title}.")
+                            source.resolveAudio(match).copy(id = track.id, title = track.title, artist = track.artist)
+                        }
+                        else -> source.resolveAudio(track)
+                    }
+                }
+
                 fun play(track: MusicTrack, keepQueue: Boolean = false, radio: Boolean = false): Int {
                     if (!keepQueue) {
                         queueJob?.cancel()
@@ -474,7 +492,7 @@ class MainActivity : ComponentActivity() {
                     playJob?.cancel()
                     playJob = lifecycleScope.launch {
                         runCatching {
-                            val resolved = if (track.pageUrl.startsWith("content://")) track.copy(streamUrl = track.pageUrl) else withContext(Dispatchers.IO) { source.resolveAudio(track) }
+                            val resolved = resolveForPlayback(track)
                             val activePlayer = withContext(Dispatchers.IO) { controllerFuture.get() }
                             val item = musicItem(resolved, resolved.streamUrl, radio)
                             withContext(Dispatchers.Main) {
@@ -530,8 +548,12 @@ class MainActivity : ComponentActivity() {
                             withTimeout(30_000) {
                                 while (completedPlaybackRequest != request) delay(100)
                             }
-                            for (candidate in candidates.distinctBy { it.id }.filterNot { it.id == seed.id }.take(12)) {
-                                val resolved = try { if (candidate.pageUrl.startsWith("content://")) candidate.copy(streamUrl = candidate.pageUrl) else withContext(Dispatchers.IO) { source.resolveAudio(candidate) } }
+                            for (candidate in candidates.distinctBy { it.id }.filterNot { it.id == seed.id }) {
+                                while (activePlayer.mediaItemCount - activePlayer.currentMediaItemIndex > 8) {
+                                    if (request != playbackRequest) return@launch
+                                    delay(500)
+                                }
+                                val resolved = try { resolveForPlayback(candidate) }
                                     catch (cancelled: CancellationException) { throw cancelled }
                                     catch (_: Exception) { continue }
                                 if (request != playbackRequest) return@launch

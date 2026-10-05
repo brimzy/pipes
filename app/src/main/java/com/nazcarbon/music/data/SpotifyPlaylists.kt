@@ -25,6 +25,23 @@ object SpotifyPlaylists {
 
     fun load(value: String): SpotifyPlaylistPreview = parsePage(readUrl(canonicalUrl(value)))
 
+    fun playlistId(value: String): String {
+        val input = value.trim()
+        if (input.startsWith("spotify:playlist:", ignoreCase = true)) {
+            return input.substringAfterLast(':').also { require(spotifyId.matches(it)) { "Paste a Spotify playlist link." } }
+        }
+        val uri = URI(withScheme(input))
+        require(uri.scheme == "https" && uri.host?.lowercase() in setOf("open.spotify.com", "spotify.com", "www.spotify.com")) {
+            "Paste a Spotify playlist link."
+        }
+        val parts = uri.path.orEmpty().trim('/').split('/')
+        val index = parts.indexOf("playlist")
+        require(index >= 0 && index + 1 < parts.size && spotifyId.matches(parts[index + 1])) {
+            "Paste a Spotify playlist link."
+        }
+        return parts[index + 1]
+    }
+
     internal fun parsePage(html: String): SpotifyPlaylistPreview {
         val name = Regex("<meta property=\"og:title\" content=\"(.*?)\"", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.decodeHtml().orEmpty()
