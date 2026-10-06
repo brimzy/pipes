@@ -4,6 +4,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SpotifyLinksTest {
+    @Test fun `shared playlist link routes to playlist import and preserves its ID`() {
+        val link = "https://open.spotify.com/playlist/2pGRCAw0YXXAJtHC8JmhwB?si=EDDiqY5fT8qpajtQ9tXUJQ"
+        assertTrue(SpotifyLinks.isSpotifyLink(link))
+        assertTrue(SpotifyPlaylists.isPlaylistLink(link))
+        assertEquals("2pGRCAw0YXXAJtHC8JmhwB", SpotifyPlaylists.playlistId(link))
+    }
+
     private val id = "0VjIjW4GlUZAMYd2vXMi3b"
 
     @Test fun `Spotify track links normalize before lookup`() {

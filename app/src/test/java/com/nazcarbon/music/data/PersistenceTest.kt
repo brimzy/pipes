@@ -34,6 +34,21 @@ class PersistenceTest {
         assertFalse(disk.values.any { "expiring-secret-stream" in it })
     }
 
+    @Test fun largePlaylistAndPartialSourceCountSurviveRestart() {
+        val disk = mutableMapOf<String, String>()
+        val tracks = (0 until 1464).map { index ->
+            MusicTrack("spotify:song:$index", "Song $index", "Artist", 210, "", "", "spotify-search:song")
+        }
+        PlaylistStore.save(preferences(disk), listOf(MusicPlaylist("Large", tracks), MusicPlaylist("Partial", tracks.take(100), 1464), MusicPlaylist("Music only", tracks.dropLast(2), 1464, 2)))
+        val restored = PlaylistStore.load(preferences(disk))
+        assertEquals(tracks, restored.first().tracks)
+        assertEquals(0, restored.first().sourceTotal)
+        assertEquals(1464, restored[1].sourceTotal)
+        assertEquals(100, restored[1].tracks.size)
+        assertEquals(2, restored[2].sourceSkipped)
+        assertEquals(restored[2].sourceTotal, restored[2].tracks.size + restored[2].sourceSkipped)
+    }
+
     @Test fun historyRoundTripDeletionAndClearSurviveReload() {
         var history = SearchHistory.add(listOf("older", "Artist"), " artist ")
         assertEquals(listOf("artist", "older"), history)
