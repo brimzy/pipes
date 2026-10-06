@@ -27,6 +27,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import com.nazcarbon.music.data.PlaybackQueueRequests
 import kotlinx.coroutines.withContext
 
 @UnstableApi
@@ -35,6 +39,8 @@ class PlaybackService : MediaSessionService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var radioSource: NewPipeMusicSource? = null
     private var isRefillingQueue = false
+    private val pendingTracks = ArrayDeque<MusicTrack>()
+    private var pendingSession: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -60,18 +66,36 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 maybeExtendQueue(player)
             }
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_ENDED) maybeExtendQueue(player)
+            }
         })
         mediaSession = MediaSession.Builder(this, player).setCallback(object : MediaSession.Callback {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
                 MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
-                        .add(SessionCommand("pipes.start_radio", Bundle.EMPTY)).build())
+                        .add(SessionCommand("pipes.start_radio", Bundle.EMPTY))
+                        .add(SessionCommand("pipes.set_queue", Bundle.EMPTY)).build())
                     .build()
 
             override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
                 customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                if (customCommand.customAction == "pipes.set_queue") {
+                    val sessionId = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                    if (sessionId == null || args.getString("session") != sessionId)
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+                    val tracks = PlaybackQueueRequests.consume(args.getString("queue_id").orEmpty(), sessionId)
+                        ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    pendingTracks.clear()
+                    pendingSession = sessionId
+                    pendingTracks.addAll(tracks)
+                    maybeExtendQueue(player)
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 if (customCommand.customAction != "pipes.start_radio") return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                 val current = player.currentMediaItem ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+                pendingTracks.clear()
+                pendingSession = null
                 // Only metadata changes: retain the stream, position and paused/playing state.
                 val extras = Bundle(current.mediaMetadata.extras ?: Bundle.EMPTY).apply {
                     putBoolean(RADIO_METADATA_KEY, true)
@@ -92,22 +116,18 @@ class PlaybackService : MediaSessionService() {
     private fun maybeExtendQueue(player: Player) {
         val current = player.currentMediaItem ?: return
         val extras = current.mediaMetadata.extras ?: return
-        if (extras.getBoolean(AUTO_QUEUE_METADATA_KEY) != true) return
+        val queueSession = extras.getString(AUTO_QUEUE_SESSION_KEY) ?: return
+        if (pendingSession != null && pendingSession != queueSession) {
+            pendingTracks.clear()
+            pendingSession = null
+        }
+        val playlistQueue = pendingSession == queueSession
+        if (!playlistQueue && !extras.getBoolean(AUTO_QUEUE_METADATA_KEY)) return
         val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
-        if (remaining > 3 || isRefillingQueue) return
-
-        val seed = MusicTrack(
-            id = current.mediaId,
-            title = current.mediaMetadata.title?.toString().orEmpty(),
-            artist = current.mediaMetadata.artist?.toString().orEmpty(),
-            durationSeconds = 0,
-            thumbnailUrl = current.mediaMetadata.artworkUri?.toString().orEmpty(),
-            streamUrl = current.localConfiguration?.uri?.toString().orEmpty(),
-            pageUrl = current.mediaId,
-        )
-        val queueSession = extras.getString(AUTO_QUEUE_SESSION_KEY)
-            ?: extras.getString("pipes_radio_session")
-            ?: return
+        if (remaining > 3 || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
+        val seed = MusicTrack(current.mediaId, current.mediaMetadata.title?.toString().orEmpty(),
+            current.mediaMetadata.artist?.toString().orEmpty(), extras.getLong("pipes_duration"),
+            current.mediaMetadata.artworkUri?.toString().orEmpty(), "", extras.getString("pipes_page_url") ?: current.mediaId)
         val isRadio = extras.getBoolean(RADIO_METADATA_KEY)
         isRefillingQueue = true
         mediaSession?.setSessionExtras(Bundle().apply {
@@ -115,51 +135,63 @@ class PlaybackService : MediaSessionService() {
             putBoolean("autoplay_loading", true)
         })
         serviceScope.launch {
+            var added = 0
             try {
                 val source = radioSource ?: return@launch
-                val related = withContext(Dispatchers.IO) { source.relatedSongs(seed) }
-                val existingIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }.toSet()
-                val nextTracks = related.filterNot { it.id in existingIds }.take(6)
-                for (track in nextTracks) {
-                    val resolved = try {
-                        withContext(Dispatchers.IO) { source.resolveAudio(track) }
-                    } catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Exception) { continue }
-                    val active = player.currentMediaItem?.mediaMetadata?.extras
-                    if (active?.getBoolean(AUTO_QUEUE_METADATA_KEY) != true) return@launch
-                    val activeSession = active.getString(AUTO_QUEUE_SESSION_KEY)
-                        ?: active.getString("pipes_radio_session")
-                    if (activeSession != queueSession) return@launch
-                    if ((0 until player.mediaItemCount).none { player.getMediaItemAt(it).mediaId == track.id }) {
+                fun sessionStillActive() = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) == queueSession
+                val existingUrls = (0 until player.mediaItemCount).map {
+                    player.getMediaItemAt(it).mediaMetadata.extras?.getString("pipes_page_url")
+                }.toSet()
+                val radioCandidates = if (playlistQueue) emptyList() else withContext(Dispatchers.IO) {
+                    source.relatedSongs(seed).filterNot { it.pageUrl in existingUrls }
+                }
+                val candidates = ArrayDeque(radioCandidates)
+                var examined = 0
+                while (added < 6 && examined < 18 && sessionStillActive()) {
+                    val batch = if (playlistQueue) {
+                        (0 until minOf(3, pendingTracks.size)).map { pendingTracks.removeFirst() }
+                    } else (0 until minOf(3, candidates.size)).map { candidates.removeFirst() }
+                    if (batch.isEmpty()) break
+                    examined += batch.size
+                    val resolved = coroutineScope {
+                        batch.map { track -> async(Dispatchers.IO) {
+                            try { source.resolveForPlayback(track) }
+                            catch (cancelled: CancellationException) { throw cancelled }
+                            catch (_: Exception) { null }
+                        } }.awaitAll()
+                    }
+                    if (!sessionStillActive()) return@launch
+                    for (track in resolved.filterNotNull()) {
                         val ended = player.playbackState == Player.STATE_ENDED
-                        player.addMediaItem(queuedItem(resolved, resolved.streamUrl, queueSession, isRadio))
+                        player.addMediaItem(queuedItem(track, track.streamUrl, queueSession, isRadio, autoplay = !playlistQueue))
+                        added++
                         if (ended && player.hasNextMediaItem()) {
                             player.seekToNextMediaItem()
                             player.prepare()
                         }
                     }
                 }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) {
-                // Recommendation outages must never crash or interrupt the playing track.
+                if (added == 0) mediaSession?.setSessionExtras(Bundle().apply {
+                    putString("queue_error", if (playlistQueue) "Couldn't match the remaining playlist songs." else "Radio couldn't find playable songs. Try again.")
+                })
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                mediaSession?.setSessionExtras(Bundle().apply { putString("queue_error", "Couldn't load related music. Try radio again.") })
             } finally {
                 isRefillingQueue = false
-                mediaSession?.setSessionExtras(Bundle().apply {
+                val previous = mediaSession?.sessionExtras ?: Bundle.EMPTY
+                mediaSession?.setSessionExtras(Bundle(previous).apply {
                     putBoolean("radio_loading", false)
                     putBoolean("autoplay_loading", false)
                 })
-                val active = player.currentMediaItem?.mediaMetadata?.extras
-                val activeSession = active?.getString(AUTO_QUEUE_SESSION_KEY)
-                    ?: active?.getString("pipes_radio_session")
-                if (active?.getBoolean(AUTO_QUEUE_METADATA_KEY) == true && activeSession != queueSession) {
-                    maybeExtendQueue(player)
-                }
+                val activeSession = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                if (activeSession != queueSession || (playlistQueue && added > 0 && pendingTracks.isNotEmpty() &&
+                    player.mediaItemCount - player.currentMediaItemIndex - 1 <= 3)) maybeExtendQueue(player)
             }
         }
     }
 
-    private fun queuedItem(track: MusicTrack, url: String, queueSession: String, isRadio: Boolean) =
+    private fun queuedItem(track: MusicTrack, url: String, queueSession: String, isRadio: Boolean, autoplay: Boolean) =
         MediaItem.Builder()
             .setMediaId(track.id)
             .setUri(Uri.parse(url))
@@ -171,7 +203,9 @@ class PlaybackService : MediaSessionService() {
                     .setExtras(Bundle().apply {
                         putBoolean(RADIO_METADATA_KEY, isRadio)
                         putString("pipes_radio_session", if (isRadio) queueSession else null)
-                        putBoolean(AUTO_QUEUE_METADATA_KEY, true)
+                        putBoolean(AUTO_QUEUE_METADATA_KEY, autoplay)
+                        putString("pipes_page_url", track.pageUrl)
+                        putLong("pipes_duration", track.durationSeconds)
                         putString(AUTO_QUEUE_SESSION_KEY, queueSession)
                         putString("audio_quality", track.audioQuality)
                     })

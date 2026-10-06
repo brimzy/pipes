@@ -85,8 +85,6 @@ import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.SpotifyPlaylists
-import com.nazcarbon.music.data.SpotifyAuth
-import com.nazcarbon.music.data.SpotifyPlaylistApi
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.AudioDownloads
@@ -97,6 +95,7 @@ import com.nazcarbon.music.data.MusicArtist
 import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
 import com.nazcarbon.music.data.PlaylistStore
+import com.nazcarbon.music.data.PlaybackQueueRequests
 import com.nazcarbon.music.ui.theme.PipesTheme
 import com.nazcarbon.music.ui.theme.PipesPalette
 import com.google.common.util.concurrent.ListenableFuture
@@ -119,7 +118,7 @@ private const val RADIO_METADATA_KEY = "pipes_radio"
 private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
 private const val AUTO_QUEUE_SESSION_KEY = "pipes_auto_queue_session"
 
-private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = false) =
+private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = false, autoplay: Boolean = true) =
     MediaItem.Builder()
         .setMediaId(track.id)
         .setUri(Uri.parse(streamUrl))
@@ -130,10 +129,12 @@ private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = fal
                 .setArtworkUri(Uri.parse(track.thumbnailUrl))
                 .setExtras(Bundle().apply {
                     val queueSession = java.util.UUID.randomUUID().toString()
-                    val canAutoplay = !track.pageUrl.startsWith("content://")
+                    val canAutoplay = autoplay && !track.pageUrl.startsWith("content://")
                     putBoolean(RADIO_METADATA_KEY, radio)
                     putBoolean(AUTO_QUEUE_METADATA_KEY, canAutoplay)
-                    if (canAutoplay) putString(AUTO_QUEUE_SESSION_KEY, queueSession)
+                    putString(AUTO_QUEUE_SESSION_KEY, queueSession)
+                    putString("pipes_page_url", track.pageUrl)
+                    putLong("pipes_duration", track.durationSeconds)
                     if (radio) putString("pipes_radio_session", queueSession)
                     putString("audio_quality", track.audioQuality)
                 })
@@ -161,6 +162,8 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences("pipes", MODE_PRIVATE)
         var playJob: Job? = null
         var queueJob: Job? = null
+        var importJob: Job? = null
+        var importGeneration = 0
         var playbackRequest = 0
         var completedPlaybackRequest = 0
         setContent {
@@ -168,6 +171,7 @@ class MainActivity : ComponentActivity() {
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
                 var page by remember { mutableStateOf("Home") }
                 var query by remember { mutableStateOf("") }
+                var importProgress by remember { mutableStateOf<String?>(null) }
                 var results by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var likedIds by remember { mutableStateOf(prefs.getStringSet("liked", emptySet())?.toSet().orEmpty()) }
                 var likedArtists by remember {
@@ -247,12 +251,16 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(mediaPlayer) {
                     val player = mediaPlayer ?: return@LaunchedEffect
+                    var lastQueueError: String? = null
                     while (true) {
+                        val queueError = player.sessionExtras.getString("queue_error")
+                        if (queueError != null && queueError != lastQueueError) notice = queueError
+                        lastQueueError = queueError
                         position = player.currentPosition.coerceAtLeast(0)
                         duration = player.duration.coerceAtLeast(0)
                         seekable = player.isCurrentMediaItemSeekable
                         radioLoading = player.sessionExtras.getBoolean("radio_loading") || player.sessionExtras.getBoolean("autoplay_loading")
-                        buffering = player.playbackState == Player.STATE_BUFFERING
+                        buffering = playJob?.isActive == true || player.playbackState == Player.STATE_BUFFERING
                         shuffle = player.shuffleModeEnabled
                         repeat = player.repeatMode
                         isPlaying = player.isPlaying
@@ -261,13 +269,13 @@ class MainActivity : ComponentActivity() {
                             audioQuality = item.mediaMetadata.extras?.getString("audio_quality").orEmpty()
                             current = knownTracks[item.mediaId] ?: MusicTrack(item.mediaId,
                                 item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
-                                0, item.mediaMetadata.artworkUri?.toString().orEmpty(), "", item.mediaId)
+                                item.mediaMetadata.extras?.getLong("pipes_duration") ?: 0, item.mediaMetadata.artworkUri?.toString().orEmpty(), "", item.mediaMetadata.extras?.getString("pipes_page_url") ?: item.mediaId)
                         }
                         queueTracks = (0 until player.mediaItemCount).map { index ->
                             val queued = player.getMediaItemAt(index)
                             knownTracks[queued.mediaId] ?: MusicTrack(queued.mediaId,
                                 queued.mediaMetadata.title?.toString().orEmpty(), queued.mediaMetadata.artist?.toString().orEmpty(),
-                                0, queued.mediaMetadata.artworkUri?.toString().orEmpty(), "", queued.mediaId)
+                                queued.mediaMetadata.extras?.getLong("pipes_duration") ?: 0, queued.mediaMetadata.artworkUri?.toString().orEmpty(), "", queued.mediaMetadata.extras?.getString("pipes_page_url") ?: queued.mediaId)
                         }
                         delay(300)
                     }
@@ -347,28 +355,36 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 fun importSpotifyPlaylist(text: String) {
+                    importJob?.cancel()
+                    val generation = ++importGeneration
+                    songSearch.submit("")
+                    importProgress = "Opening public playlist…"
                     query = text
                     page = "Search"
                     loading = true
                     searchError = null
-                    lifecycleScope.launch {
+                    importJob = lifecycleScope.launch {
                         runCatching {
-                            val playlistId = SpotifyPlaylists.playlistId(text)
-                            val token = SpotifyAuth(this@MainActivity).getAccessToken()
-                            val spotifyPlaylist = withContext(Dispatchers.IO) { SpotifyPlaylistApi.load(token, playlistId) }
-                            val imported = spotifyPlaylist.tracks.map { spotifyTrack ->
+                            val spotifyPlaylist = SpotifyPlaylists.load(text) { completed, total ->
+                                runOnUiThread {
+                                    if (generation == importGeneration && importJob?.isActive == true) {
+                                        importProgress = "Reading playlist · $completed / $total items"
+                                    }
+                                }
+                            }
+                            val imported = spotifyPlaylist.tracks.mapIndexed { position, spotifyTrack ->
                                 MusicTrack(
-                                    id = "spotify:${spotifyTrack.id}:${spotifyTrack.position}",
+                                    id = "spotify:${spotifyTrack.id}:${spotifyTrack.position.takeIf { it >= 0 } ?: position}",
                                     title = spotifyTrack.title,
                                     artist = spotifyTrack.artist,
-                                    durationSeconds = 0,
-                                    thumbnailUrl = "",
+                                    durationSeconds = spotifyTrack.durationSeconds,
+                                    thumbnailUrl = spotifyTrack.thumbnailUrl,
                                     streamUrl = "",
                                     pageUrl = "spotify-search:${spotifyTrack.id}",
                                 )
                             }
                             require(imported.isNotEmpty()) { "This Spotify playlist has no playable music tracks." }
-                            val playlist = MusicPlaylist(spotifyPlaylist.name, imported)
+                            val playlist = MusicPlaylist(spotifyPlaylist.name, imported, spotifyPlaylist.totalTracks, spotifyPlaylist.skippedItems)
                             val updatedPlaylists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
                                 playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist else it }
                             } else playlists + playlist
@@ -380,10 +396,11 @@ class MainActivity : ComponentActivity() {
                             playlists = updatedPlaylists
                             selectedPlaylist = playlist.name
                             page = "Playlist"
-                            notice = if (spotifyPlaylist.totalTracks > imported.size) {
-                                "Imported ${imported.size} of ${spotifyPlaylist.totalTracks} Spotify items"
+                            notice = if (spotifyPlaylist.skippedItems > 0) {
+                                "Imported ${imported.size} songs · ${spotifyPlaylist.skippedItems} unavailable or non-music items skipped"
                             } else "Imported ${imported.size} Spotify songs"
                         }.onFailure { failure ->
+                            if (failure is CancellationException) throw failure
                             searchError = failure.message ?: "Couldn't import this Spotify playlist."
                         }
                         loading = false
@@ -394,6 +411,9 @@ class MainActivity : ComponentActivity() {
                         importSpotifyPlaylist(text)
                         return
                     }
+                    importJob?.cancel()
+                    importGeneration++
+                    importProgress = null
                     query = text
                     page = "Search"
                     songSearch.submit(text)
@@ -466,15 +486,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 suspend fun resolveForPlayback(track: MusicTrack): MusicTrack = withContext(Dispatchers.IO) {
-                    when {
-                        track.pageUrl.startsWith("content://") -> track.copy(streamUrl = track.pageUrl)
-                        track.pageUrl.startsWith("spotify-search:") -> {
-                            val match = source.searchSongs("${track.title} ${track.artist}").firstOrNull()
-                                ?: error("Couldn't find a playable match for ${track.title}.")
-                            source.resolveAudio(match).copy(id = track.id, title = track.title, artist = track.artist)
-                        }
-                        else -> source.resolveAudio(track)
-                    }
+                    source.resolveForPlayback(track)
                 }
 
                 fun play(track: MusicTrack, keepQueue: Boolean = false, radio: Boolean = false): Int {
@@ -494,7 +506,7 @@ class MainActivity : ComponentActivity() {
                         runCatching {
                             val resolved = resolveForPlayback(track)
                             val activePlayer = withContext(Dispatchers.IO) { controllerFuture.get() }
-                            val item = musicItem(resolved, resolved.streamUrl, radio)
+                            val item = musicItem(resolved, resolved.streamUrl, radio, autoplay = !keepQueue || radio)
                             withContext(Dispatchers.Main) {
                                 if (request != playbackRequest) return@withContext
                                 knownTracks[track.id] = resolved
@@ -540,7 +552,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun enqueue(seed: MusicTrack, candidates: List<MusicTrack>, radio: Boolean, request: Int) {
+                fun enqueue(candidates: List<MusicTrack>, request: Int) {
                     queueJob?.cancel()
                     queueJob = lifecycleScope.launch {
                         try {
@@ -548,18 +560,14 @@ class MainActivity : ComponentActivity() {
                             withTimeout(30_000) {
                                 while (completedPlaybackRequest != request) delay(100)
                             }
-                            for (candidate in candidates.distinctBy { it.id }.filterNot { it.id == seed.id }) {
-                                while (activePlayer.mediaItemCount - activePlayer.currentMediaItemIndex > 8) {
-                                    if (request != playbackRequest) return@launch
-                                    delay(500)
-                                }
-                                val resolved = try { resolveForPlayback(candidate) }
-                                    catch (cancelled: CancellationException) { throw cancelled }
-                                    catch (_: Exception) { continue }
-                                if (request != playbackRequest) return@launch
-                                knownTracks[candidate.id] = resolved
-                                activePlayer.addMediaItem(musicItem(resolved, resolved.streamUrl, radio))
-                            }
+                            if (request != playbackRequest) return@launch
+                            val session = activePlayer.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                                ?: error("The playlist playback session couldn't start.")
+                            val queueId = PlaybackQueueRequests.register(session, candidates)
+                            activePlayer.sendCustomCommand(SessionCommand("pipes.set_queue", Bundle.EMPTY), Bundle().apply {
+                                putString("queue_id", queueId)
+                                putString("session", session)
+                            })
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { if (request == playbackRequest) error = "Couldn't prepare the queue. Try again." }
                     }
@@ -599,7 +607,7 @@ class MainActivity : ComponentActivity() {
                     val ordered = sequence.distinctBy { it.id }.dropWhile { it.id != track.id }.ifEmpty { listOf(track) }
                     queueTracks = ordered
                     val request = play(track, keepQueue = true, radio = radio)
-                    enqueue(track, ordered.drop(1), radio = radio, request)
+                    enqueue(ordered.drop(1), request)
                 }
 
                 fun saveToCommute(track: MusicTrack) {
@@ -798,7 +806,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 "Search" -> if (query.isBlank()) SearchHistoryPanel(searchHistory, ::search,
                                     { value -> saveHistory(searchHistory.filterNot { it == value }) }, { saveHistory(emptyList()) })
-                                else SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) })
+                                else SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) }, loadingMessage = importProgress)
                                 "Artist Search" -> ArtistSearchResults(artistQuery, artistResults, artistLoading, artistError, { findArtists(artistQuery) }, ::openArtist)
                                 "Artist" -> ArtistDiscographyScreen(
                                     selectedArtist,
@@ -1005,7 +1013,7 @@ class MainActivity : ComponentActivity() {
     )
 }
 
-@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onArtist: (String) -> Unit, onRetry: () -> Unit) {
+@Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onArtist: (String) -> Unit, onRetry: () -> Unit, loadingMessage: String? = null) {
     Column(Modifier.fillMaxSize()) {
         Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         TextButton(onClick = { onArtist(query) }, enabled = query.isNotBlank(), modifier = Modifier.padding(horizontal = 12.dp)) {
@@ -1014,7 +1022,10 @@ class MainActivity : ComponentActivity() {
             Text(if (query.isBlank()) "Browse artist discography" else "Artist discography · $query", color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         when {
-            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(35.dp))
+            loading -> Column(Modifier.align(Alignment.CenterHorizontally).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                PipesLoading()
+                loadingMessage?.let { Text(it, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp)) }
+            }
             error != null -> Column(Modifier.padding(20.dp)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry search") }
@@ -1298,6 +1309,14 @@ class MainActivity : ComponentActivity() {
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete playlist", tint = Ink) }
         }
         Text("${playlist.tracks.size} songs · saved on this device", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
+        if (playlist.sourceTotal > playlist.tracks.size + playlist.sourceSkipped) {
+            Text("Spotify exposes ${playlist.tracks.size} of ${playlist.sourceTotal} songs without sign-in. This is a partial import.",
+                color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp))
+        }
+        if (playlist.sourceSkipped > 0) {
+            Text("${playlist.sourceSkipped} unavailable or non-music items skipped", color = Muted,
+                fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+        }
         if (playlist.tracks.isEmpty()) {
             Text("Use a song's menu to add it to this playlist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
@@ -1331,7 +1350,7 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
         if (following.isEmpty()) {
-            if (radioLoading) CircularProgressIndicator(color = Ink, modifier = Modifier.padding(24.dp))
+            if (radioLoading) PipesLoading(modifier = Modifier.padding(24.dp))
             else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
             items(following, key = { it.id }) { track ->
@@ -1353,7 +1372,7 @@ class MainActivity : ComponentActivity() {
         Text("Artists", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
         Text("Discography search · $query", color = Muted, modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp))
         when {
-            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
+            loading -> PipesLoading(modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
             error != null -> Column(Modifier.padding(20.dp)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry") }
@@ -1436,7 +1455,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         when {
-            loading -> item(key = "artist-loading") { CircularProgressIndicator(color = Ink, modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
+            loading -> item(key = "artist-loading") { PipesLoading(modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
             error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
             discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
             else -> {
@@ -1694,7 +1713,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             TextButton(onClick = onRadio) { Icon(Icons.Default.Radio, null, tint = Ink); Text("Artist radio", color = Ink) }
         }
         when {
-            loading -> CircularProgressIndicator(color = Ink, modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
+            loading -> PipesLoading(modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
             error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
             tracks.isEmpty() -> Text("No tracks were found on this release.", color = Muted, modifier = Modifier.padding(20.dp))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
@@ -1818,7 +1837,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
                 IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
                 FilledIconButton(onClick = toggle, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Ink, contentColor = Carbon), modifier = Modifier.size(68.dp)) {
-                    if (buffering) CircularProgressIndicator(Modifier.size(28.dp), color = Carbon, strokeWidth = 2.dp)
+                    if (buffering) PipesLoading(Modifier.size(40.dp))
                     else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", modifier = Modifier.size(34.dp))
                 }
                 IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }

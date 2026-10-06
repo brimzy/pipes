@@ -35,6 +35,12 @@ class NewPipeMusicSource {
     }
 
     private val service: StreamingService by lazy { NewPipe.getService("YouTube") }
+    private val matches = java.util.Collections.synchronizedMap(object : LinkedHashMap<String, MusicTrack>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, MusicTrack>?) = size > 512
+    })
+    private val audioCache = java.util.Collections.synchronizedMap(object : LinkedHashMap<String, Pair<Long, MusicTrack>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, MusicTrack>>?) = size > 64
+    })
     private val discographyCache = ConcurrentHashMap<String, CachedDiscography>()
 
     private data class CachedDiscography(
@@ -192,9 +198,11 @@ class NewPipeMusicSource {
         return releases
     }
 
-    private fun youtubeMusicBrowse(request: JSONObject, context: JSONObject): JSONObject {
+    private fun youtubeMusicBrowse(request: JSONObject, context: JSONObject): JSONObject = youtubeMusicRequest("browse", request, context)
+
+    private fun youtubeMusicRequest(endpoint: String, request: JSONObject, context: JSONObject): JSONObject {
         val payload = JSONObject(request.toString()).put("context", JSONObject(context.toString()))
-        val url = URL("https://music.youtube.com/youtubei/v1/browse?alt=json&key=$YOUTUBE_MUSIC_API_KEY")
+        val url = URL("https://music.youtube.com/youtubei/v1/$endpoint?alt=json&key=$YOUTUBE_MUSIC_API_KEY")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 12_000
@@ -453,7 +461,30 @@ class NewPipeMusicSource {
         return collectPlaylistItems(service.getSearchExtractor(handler), maxPages)
     }
 
+    fun playableTrack(track: MusicTrack): MusicTrack {
+        if (!track.pageUrl.startsWith("spotify-search:")) return track.copy(pageUrl = track.pageUrl.replace("https://music.youtube.com/", "https://www.youtube.com/"))
+        val key = "${track.title.lowercase()}|${track.artist.lowercase()}"
+        matches[key]?.let { return it.copy(id = track.id, title = track.title, artist = track.artist) }
+        val ranked = searchSongs("${track.title} ${track.artist}")
+            .sortedByDescending { MusicRecommendations.matchScore(track, it) }
+        val match = ranked.firstOrNull { MusicRecommendations.matchScore(track, it) >= 0.40 }
+            ?: error("Couldn't find a matching recording for ${track.title} by ${track.artist}.")
+        val canonical = match.copy(pageUrl = match.pageUrl.replace("https://music.youtube.com/", "https://www.youtube.com/"))
+        matches[key] = canonical
+        return canonical.copy(id = track.id, title = track.title, artist = track.artist)
+    }
+
+    fun resolveForPlayback(track: MusicTrack): MusicTrack =
+        if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://")) track.copy(streamUrl = track.pageUrl)
+        else resolveAudio(playableTrack(track)).let { resolved ->
+            if (track.pageUrl.startsWith("spotify-search:")) resolved.copy(title = track.title, artist = track.artist) else resolved
+        }
+
     fun resolveAudio(track: MusicTrack): MusicTrack {
+        val cached = audioCache[track.pageUrl]
+        if (cached != null && System.currentTimeMillis() - cached.first < 10 * 60 * 1000) {
+            return cached.second.copy(id = track.id, title = track.title, artist = track.artist)
+        }
         val streamExtractor = service.getStreamExtractor(track.pageUrl)
         streamExtractor.fetchPage()
         val audio = streamExtractor.audioStreams
@@ -470,35 +501,37 @@ class NewPipeMusicSource {
                 audio.format?.name,
                 audio.averageBitrate.takeIf { it > 0 }?.let { "$it kbps" },
             ).joinToString(" · "),
-        )
+        ).also { audioCache[track.pageUrl] = System.currentTimeMillis() to it }
     }
 
     fun relatedSongs(track: MusicTrack): List<MusicTrack> {
-        val streamExtractor = service.getStreamExtractor(track.pageUrl)
-        streamExtractor.fetchPage()
-        val related = streamExtractor.relatedItems?.items.orEmpty()
-            .filterIsInstance<StreamInfoItem>()
-            .map { item ->
-                MusicTrack(
-                    id = item.url,
-                    title = item.name,
-                    artist = item.uploaderName.orEmpty().ifBlank { "YouTube Music" },
-                    durationSeconds = item.duration,
-                    thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
-                    streamUrl = "",
-                    pageUrl = item.url,
-                )
-            }
-            .filter { it.id != track.id && it.durationSeconds > 0 }
-            .distinctBy { it.id }
-            .take(20)
-
-        if (related.isNotEmpty()) return related
-        return searchSongs("${track.artist} ${track.title} similar songs")
-            .filter { it.id != track.id }
-            .distinctBy { it.id }
-            .take(20)
+        val seed = playableTrack(track)
+        val videoId = Regex("(?:[?&]v=|youtu\\.be/)([A-Za-z0-9_-]{11})")
+            .find(seed.pageUrl)?.groupValues?.get(1) ?: error("This song has no radio source.")
+        val context = JSONObject().put("client", JSONObject().put("clientName", "WEB_REMIX")
+            .put("clientVersion", youtubeMusicClientVersion()).put("hl", "en").put("gl", "US"))
+        val response = youtubeMusicRequest("next", JSONObject().put("videoId", videoId)
+            .put("playlistId", "RDAMVM$videoId").put("isAudioOnly", true), context)
+        return MusicRecommendations.radio(seed, parseMusicRadio(response))
+            .also { require(it.isNotEmpty()) { "No related music was returned. Try radio again in a moment." } }
     }
+
+    internal fun parseMusicRadio(response: JSONObject): List<MusicTrack> =
+        findJsonObjects(response, "playlistPanelVideoRenderer").mapNotNull { row ->
+            val id = row.optString("videoId")
+            val title = row.optJSONObject("title")?.let(::textFromRuns).orEmpty()
+            val artist = row.optJSONObject("longBylineText")?.let(::textFromRuns).orEmpty()
+                .substringBefore(" • ").substringBefore(" · ")
+            val musicType = row.optJSONObject("navigationEndpoint")?.optJSONObject("watchEndpoint")
+                ?.optJSONObject("watchEndpointMusicSupportedConfigs")?.optJSONObject("watchEndpointMusicConfig")
+                ?.optString("musicVideoType").orEmpty()
+            if (id.isBlank() || title.isBlank() || artist.isBlank() ||
+                musicType !in setOf("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_OMV")) return@mapNotNull null
+            val durationText = row.optJSONObject("lengthText")?.let(::textFromRuns).orEmpty()
+            val seconds = durationText.split(':').fold(0L) { sum, part -> sum * 60 + (part.toLongOrNull() ?: 0) }
+            val url = "https://www.youtube.com/watch?v=$id"
+            MusicTrack(url, title, artist, seconds, findThumbnailUrl(row), "", url)
+        }
 
     private class AndroidDownloader : Downloader() {
         override fun execute(request: Request): Response {

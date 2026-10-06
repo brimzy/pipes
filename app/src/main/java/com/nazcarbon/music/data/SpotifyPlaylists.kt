@@ -3,15 +3,17 @@ package com.nazcarbon.music.data
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import org.json.JSONObject
 
-data class SpotifyPlaylistTrack(val title: String, val artist: String)
+data class SpotifyPlaylistTrack(val title: String, val artist: String, val id: String = "", val durationSeconds: Long = 0, val thumbnailUrl: String = "", val position: Int = -1)
 data class SpotifyPlaylistPreview(
     val name: String,
     val tracks: List<SpotifyPlaylistTrack>,
     val totalTracks: Int,
+    val skippedItems: Int = 0,
 )
 
-/** Imports the rows Spotify exposes on a public playlist page. */
+/** Imports complete public playlists through a temporary anonymous web-player session. */
 object SpotifyPlaylists {
     private val spotifyId = Regex("[A-Za-z0-9]{22}")
 
@@ -23,7 +25,33 @@ object SpotifyPlaylists {
             uri.path.orEmpty().split('/').contains("playlist")
     }
 
-    fun load(value: String): SpotifyPlaylistPreview = parsePage(readUrl(canonicalUrl(value)))
+    suspend fun load(value: String, progress: (Int, Int) -> Unit = { _, _ -> }): SpotifyPlaylistPreview =
+        SpotifyGuestPlaylist.load(playlistId(value), progress)
+
+    internal fun parseEmbed(html: String, total: Int): SpotifyPlaylistPreview {
+        val payload = Regex("<script[^>]*id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", RegexOption.DOT_MATCHES_ALL)
+            .find(html)?.groupValues?.get(1) ?: error("Spotify didn't return playlist data.")
+        val entity = JSONObject(payload).getJSONObject("props").getJSONObject("pageProps")
+            .getJSONObject("state").getJSONObject("data").getJSONObject("entity")
+        val rows = entity.getJSONArray("trackList")
+        val tracks = (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            if (row.optString("entityType") != "track") return@mapNotNull null
+            val title = row.optString("title").trim()
+            val artist = row.optString("subtitle").trim()
+            val id = row.optString("uri").substringAfterLast(':')
+            if (title.isBlank() || artist.isBlank() || !spotifyId.matches(id)) null
+            else SpotifyPlaylistTrack(title, artist, id, row.optLong("duration") / 1000)
+        }
+        require(tracks.isNotEmpty()) { "Spotify didn't expose any songs in this playlist." }
+        return SpotifyPlaylistPreview(entity.getString("name"), tracks, total.coerceAtLeast(tracks.size))
+    }
+
+    internal fun declaredTotal(html: String): Int =
+        Regex("<meta[^>]*name=\"music:song_count\"[^>]*content=\"([0-9]+)\"", RegexOption.IGNORE_CASE)
+            .find(html)?.groupValues?.get(1)?.toIntOrNull()
+            ?: Regex("<meta property=\"og:description\" content=\"[^\"]*?([0-9,]+) items", RegexOption.IGNORE_CASE)
+                .find(html)?.groupValues?.get(1)?.replace(",", "")?.toIntOrNull() ?: 0
 
     fun playlistId(value: String): String {
         val input = value.trim()
@@ -45,15 +73,14 @@ object SpotifyPlaylists {
     internal fun parsePage(html: String): SpotifyPlaylistPreview {
         val name = Regex("<meta property=\"og:title\" content=\"(.*?)\"", RegexOption.IGNORE_CASE)
             .find(html)?.groupValues?.get(1)?.decodeHtml().orEmpty()
-        val total = Regex("<meta property=\"og:description\" content=\".*?([0-9]+) items\"", RegexOption.IGNORE_CASE)
-            .find(html)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        val total = declaredTotal(html)
         val row = Regex(
             "data-testid=\"track-row\".*?href=\"/track/[A-Za-z0-9]{22}\".*?data-encore-id=\"listRowTitle\".*?<span[^>]*>(.*?)</span>.*?data-testid=\"internal-artist-link\".*?<a[^>]*>(.*?)</a>",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
         val tracks = row.findAll(html).map { match ->
             SpotifyPlaylistTrack(match.groupValues[1].stripTags().decodeHtml(), match.groupValues[2].stripTags().decodeHtml())
-        }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }.distinct().toList()
+        }.filter { it.title.isNotBlank() && it.artist.isNotBlank() }.toList()
         require(name.isNotBlank() && tracks.isNotEmpty()) {
             "Couldn't read this Spotify playlist. It may be private or unavailable."
         }
