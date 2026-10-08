@@ -78,7 +78,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
-import coil.compose.AsyncImage
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -967,7 +966,7 @@ class MainActivity : ComponentActivity() {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
                 items((listOf(current) + playlists.flatMap { it.tracks }).distinctBy { it.id }.take(12), key = { "home:${it.id}" }) { track ->
                     Column(Modifier.width(140.dp).clickable { onSearch("${track.artist} ${track.title}") }) {
-                        AsyncImage(track.thumbnailUrl, null, Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(Raised), contentScale = ContentScale.Crop)
+                        ArtworkImage(track.thumbnailUrl, null, Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(Raised), contentScale = ContentScale.Crop)
                         Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                         Text(track.artist, color = Muted, fontSize = 12.sp, maxLines = 1)
                     }
@@ -1043,7 +1042,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: ((MusicTrack) -> Unit)? = null, onArtist: ((String) -> Unit)? = null) {
     var menuOpen by remember(track.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable { onPlay(track) }.padding(horizontal = 20.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        AsyncImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
+        ArtworkImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(track.title, color = if (active) Accent else Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
@@ -1386,7 +1385,7 @@ class MainActivity : ComponentActivity() {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onOpenArtist(artist) }.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        AsyncImage(artist.thumbnailUrl, null, Modifier.size(58.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
+                        ArtworkImage(artist.thumbnailUrl, null, Modifier.size(58.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(artist.name, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1429,7 +1428,7 @@ class MainActivity : ComponentActivity() {
                     Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    AsyncImage(
+                    ArtworkImage(
                         discography.artist.thumbnailUrl, null,
                         Modifier.size(76.dp).clip(CircleShape).background(Raised),
                         contentScale = ContentScale.Crop,
@@ -1528,7 +1527,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     Box(modifier.clip(CircleShape).background(Carbon), contentAlignment = Alignment.Center) {
         Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Raised), contentAlignment = Alignment.Center) {
             Box(Modifier.fillMaxSize().padding(5.dp).clip(CircleShape).background(Panel), contentAlignment = Alignment.Center) {
-                AsyncImage(imageUrl, null, Modifier.fillMaxSize(0.62f).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
+                ArtworkImage(imageUrl, null, Modifier.fillMaxSize(0.62f).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
             }
         }
     }
@@ -1617,7 +1616,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             ) {
                 if (flipAngle < 90f) {
                     Box(Modifier.fillMaxSize()) {
-                        AsyncImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                        ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                         if (isSingle) {
                             Box(
                                 Modifier.align(Alignment.TopStart).padding(9.dp)
@@ -1664,7 +1663,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         Box(Modifier.fillMaxSize().padding(5.dp).border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape))
         Box(Modifier.fillMaxSize().padding(12.dp).border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape))
         Box(Modifier.fillMaxSize().padding(20.dp).border(1.dp, Color.White.copy(alpha = 0.07f), CircleShape))
-        AsyncImage(
+        ArtworkImage(
             labelImage, null,
             Modifier.fillMaxSize(0.34f).clip(CircleShape).border(2.dp, Carbon, CircleShape),
             contentScale = ContentScale.Crop,
@@ -1677,7 +1676,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         Modifier.fillMaxWidth().clickable { onOpen(release) }.padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncImage(release.thumbnailUrl, null, Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentScale = ContentScale.Crop)
+        ArtworkImage(release.thumbnailUrl, null, Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(13.dp))
         Column(Modifier.weight(1f)) {
             Text(release.title, color = Ink, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1702,7 +1701,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(release.thumbnailUrl, null, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Raised), contentScale = ContentScale.Crop)
+            ArtworkImage(release.thumbnailUrl, null, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Raised), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(release.title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -1741,10 +1740,10 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 
 @Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit, position: Long, duration: Long) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(Raised).clickable(onClick = expand)) {
-        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.04f)
+        ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.04f)
         Column {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(track.thumbnailUrl, null, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentScale = ContentScale.Crop)
+                ArtworkImage(track.thumbnailUrl, null, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentScale = ContentScale.Crop)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -1792,7 +1791,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
         val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
-        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Fit, alpha = 0.65f)
+        ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Fit, alpha = 0.65f)
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.25f), Carbon.copy(alpha = 0.60f), Carbon.copy(alpha = 0.85f)))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
@@ -1807,7 +1806,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
-            AsyncImage(track.thumbnailUrl, "Artwork for ${track.title}",
+            ArtworkImage(track.thumbnailUrl, "Artwork for ${track.title}",
                 Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Fit)
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

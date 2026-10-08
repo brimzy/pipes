@@ -27,6 +27,9 @@ jobs:
         with:
           gradle-version: '8.14.4'
 
+      - name: Verify before releasing
+        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+
       - name: Decode signing key
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}

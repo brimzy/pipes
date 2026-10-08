@@ -26,6 +26,15 @@ class SourceSmokeTest {
             assertTrue("Audio URL returned ${connection.responseCode}", connection.responseCode in 200..299)
             connection.inputStream.use { assertTrue("Empty audio response", it.read() >= 0) }
         } finally { connection.disconnect() }
+        val refreshed = source.resolveForPlayback(resolved, forceRefresh = true)
+        assertTrue("Refresh returned no audio", refreshed.streamUrl.startsWith("https://"))
+        val artwork = URL(com.nazcarbon.music.normalizeArtworkUrl(refreshed.thumbnailUrl)).openConnection() as HttpURLConnection
+        try {
+            artwork.connectTimeout = 20_000
+            artwork.readTimeout = 20_000
+            assertTrue("Artwork returned ${artwork.responseCode}", artwork.responseCode in 200..299)
+            artwork.inputStream.use { assertTrue("Empty artwork", it.read() >= 0) }
+        } finally { artwork.disconnect() }
         val related = source.relatedSongs(tracks.first())
         assertTrue("No radio recommendations returned", related.isNotEmpty())
         assertTrue(related.none { it.id == tracks.first().id })

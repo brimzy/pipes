@@ -8,6 +8,7 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
@@ -28,11 +29,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import com.nazcarbon.music.data.PlaybackQueueRequests
+import com.nazcarbon.music.data.retryPlaybackRequest
 import kotlinx.coroutines.withContext
 
 @UnstableApi
@@ -43,6 +47,11 @@ class PlaybackService : MediaSessionService() {
     private var isRefillingQueue = false
     private val pendingTracks = ArrayDeque<MusicTrack>()
     private var pendingSession: String? = null
+    private var recoveryJob: Job? = null
+    private var recoveryItem: MediaItem? = null
+    private var recoveryAttempts = 0
+    private var queueRetryAfter = 0L
+
 
     override fun onCreate() {
         super.onCreate()
@@ -52,6 +61,8 @@ class PlaybackService : MediaSessionService() {
                     "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
             )
             .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory)))
             .setAudioAttributes(
@@ -61,6 +72,7 @@ class PlaybackService : MediaSessionService() {
                     .build(),
                 true,
             )
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(true)
             .build()
         radioSource = NewPipeMusicSource().also { it.initialize() }
@@ -68,10 +80,34 @@ class PlaybackService : MediaSessionService() {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 maybeExtendQueue(player)
             }
+            override fun onPlayerError(error: PlaybackException) {
+                recoverPlayback(player)
+            }
             override fun onPlaybackStateChanged(playbackState: Int) {
                 if (playbackState == Player.STATE_ENDED) maybeExtendQueue(player)
             }
         })
+        serviceScope.launch {
+            var stalledSince = 0L
+            var lastPosition = -1L
+            while (true) {
+                delay(5_000)
+                val stalled = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING &&
+                    player.currentPosition == lastPosition
+                if (!stalled) stalledSince = 0L
+                else if (stalledSince == 0L) stalledSince = android.os.SystemClock.elapsedRealtime()
+                else if (android.os.SystemClock.elapsedRealtime() - stalledSince >= 30_000) {
+                    recoverPlayback(player)
+                    stalledSince = 0L
+                }
+                if (player.currentPosition > lastPosition && player.playbackState == Player.STATE_READY) {
+                    recoveryAttempts = 0
+                }
+                if (player.playWhenReady && player.playerError != null) recoverPlayback(player)
+                lastPosition = player.currentPosition
+                if (player.playWhenReady) maybeExtendQueue(player)
+            }
+        }
         val openPlayer = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).apply {
@@ -124,6 +160,54 @@ class PlaybackService : MediaSessionService() {
         }).build()
     }
 
+    private fun recoverPlayback(player: Player) {
+        if (recoveryJob?.isActive == true) return
+        val item = player.currentMediaItem ?: return
+        if (recoveryItem != item) {
+            recoveryItem = item
+            recoveryAttempts = 0
+        }
+        if (recoveryAttempts >= 3) {
+            if (player.hasNextMediaItem()) {
+                player.seekToNextMediaItem()
+                player.prepare()
+            } else {
+                mediaSession?.setSessionExtras(Bundle().apply {
+                    putString("queue_error", "Playback couldn't reconnect. Try playing again.")
+                })
+            }
+            return
+        }
+        recoveryAttempts++
+        recoveryJob = serviceScope.launch {
+            delay(1_000L * recoveryAttempts)
+            try {
+                val extras = item.mediaMetadata.extras
+                val page = extras?.getString("pipes_page_url") ?: item.mediaId
+                val refreshed = withContext(Dispatchers.IO) {
+                    radioSource!!.resolveForPlayback(MusicTrack(item.mediaId,
+                        item.mediaMetadata.title?.toString().orEmpty(),
+                        item.mediaMetadata.artist?.toString().orEmpty(),
+                        extras?.getLong("pipes_duration") ?: 0L,
+                        item.mediaMetadata.artworkUri?.toString().orEmpty(), "", page), forceRefresh = true)
+                }
+                if (player.currentMediaItem != item) return@launch
+                val position = player.currentPosition
+                val replacement = item.buildUpon().setUri(refreshed.streamUrl).build()
+                recoveryItem = replacement
+                player.replaceMediaItem(player.currentMediaItemIndex, replacement)
+                player.seekTo(player.currentMediaItemIndex, position)
+                player.prepare()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (player.currentMediaItem == item) {
+                    recoveryJob = null
+                    recoverPlayback(player)
+                }
+            }
+        }
+    }
+
     private fun maybeExtendQueue(player: Player) {
         val current = player.currentMediaItem ?: return
         val extras = current.mediaMetadata.extras ?: return
@@ -135,7 +219,7 @@ class PlaybackService : MediaSessionService() {
         val playlistQueue = pendingSession == queueSession
         if (!playlistQueue && !extras.getBoolean(AUTO_QUEUE_METADATA_KEY)) return
         val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
-        if (remaining > 3 || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
+        if (android.os.SystemClock.elapsedRealtime() < queueRetryAfter || remaining > 3 || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
         val seed = MusicTrack(current.mediaId, current.mediaMetadata.title?.toString().orEmpty(),
             current.mediaMetadata.artist?.toString().orEmpty(), extras.getLong("pipes_duration"),
             current.mediaMetadata.artworkUri?.toString().orEmpty(), "", extras.getString("pipes_page_url") ?: current.mediaId)
@@ -166,7 +250,7 @@ class PlaybackService : MediaSessionService() {
                     examined += batch.size
                     val resolved = coroutineScope {
                         batch.map { track -> async(Dispatchers.IO) {
-                            try { source.resolveForPlayback(track) }
+                            try { retryPlaybackRequest { source.resolveForPlayback(track) } }
                             catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) { null }
                         } }.awaitAll()
@@ -190,6 +274,7 @@ class PlaybackService : MediaSessionService() {
                 mediaSession?.setSessionExtras(Bundle().apply { putString("queue_error", "Couldn't load related music. Try radio again.") })
             } finally {
                 isRefillingQueue = false
+                queueRetryAfter = if (added == 0) android.os.SystemClock.elapsedRealtime() + 15_000 else 0L
                 val previous = mediaSession?.sessionExtras ?: Bundle.EMPTY
                 mediaSession?.setSessionExtras(Bundle(previous).apply {
                     putBoolean("radio_loading", false)

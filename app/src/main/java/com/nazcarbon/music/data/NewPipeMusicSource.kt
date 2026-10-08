@@ -474,15 +474,15 @@ class NewPipeMusicSource {
         return canonical.copy(id = track.id, title = track.title, artist = track.artist)
     }
 
-    fun resolveForPlayback(track: MusicTrack): MusicTrack =
+    fun resolveForPlayback(track: MusicTrack, forceRefresh: Boolean = false): MusicTrack =
         if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://")) track.copy(streamUrl = track.pageUrl)
-        else resolveAudio(playableTrack(track)).let { resolved ->
+        else resolveAudio(playableTrack(track), forceRefresh).let { resolved ->
             if (track.pageUrl.startsWith("spotify-search:")) resolved.copy(title = track.title, artist = track.artist) else resolved
         }
 
-    fun resolveAudio(track: MusicTrack): MusicTrack {
+    fun resolveAudio(track: MusicTrack, forceRefresh: Boolean = false): MusicTrack {
         val cached = audioCache[track.pageUrl]
-        if (cached != null && System.currentTimeMillis() - cached.first < 10 * 60 * 1000) {
+        if (!forceRefresh && cached != null && System.currentTimeMillis() - cached.first < 10 * 60 * 1000) {
             return cached.second.copy(id = track.id, title = track.title, artist = track.artist)
         }
         val streamExtractor = service.getStreamExtractor(track.pageUrl)
