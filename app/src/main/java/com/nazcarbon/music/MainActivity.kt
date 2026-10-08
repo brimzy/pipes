@@ -65,6 +65,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -1790,8 +1792,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
         val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
-        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.10f)
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.35f), Carbon.copy(alpha = 0.80f), Carbon))))
+        AsyncImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Fit, alpha = 0.65f)
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.25f), Carbon.copy(alpha = 0.60f), Carbon.copy(alpha = 0.85f)))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1806,7 +1808,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
             AsyncImage(track.thumbnailUrl, "Artwork for ${track.title}",
-                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Crop)
+                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Fit)
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

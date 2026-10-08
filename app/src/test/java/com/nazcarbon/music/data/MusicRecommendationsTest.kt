@@ -33,6 +33,15 @@ class MusicRecommendationsTest {
         assertNotEquals(a.map { it.id }, b.map { it.id })
     }
 
+    @Test fun `radio avoids consecutive artists when alternatives exist`() {
+        val seed = song("seed", "Seed", "Artist A")
+        val candidates = (0..9).map { song("a$it", "A $it", "Artist A") } +
+            (0..9).map { song("b$it", "B $it", "Artist B") }
+        val radio = MusicRecommendations.radio(seed, candidates, Random(7))
+        assertEquals("Artist B", radio.first().artist)
+        assertTrue(radio.zipWithNext().all { (a, b) -> a.artist != b.artist })
+    }
+
     @Test fun `music radio parser rejects user videos and reads song metadata`() {
         fun row(type: String, id: String) = """{"playlistPanelVideoRenderer":{"videoId":"$id","title":{"runs":[{"text":"Song"}]},"longBylineText":{"runs":[{"text":"Artist • 1M views"}]},"lengthText":{"runs":[{"text":"3:25"}]},"navigationEndpoint":{"watchEndpoint":{"watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"$type"}}}}}}"""
         val data = JSONObject("""{"contents":[${row("MUSIC_VIDEO_TYPE_ATV", "song1234567")},${row("MUSIC_VIDEO_TYPE_UGC", "video123456") }]}""")

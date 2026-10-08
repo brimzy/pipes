@@ -29,15 +29,27 @@ object MusicRecommendations {
     /** Weighted sampling without replacement; catalog relevance with varied artists. */
     fun radio(seed: MusicTrack, candidates: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
         val seenSongs = mutableSetOf(tokens(seed.title) to tokens(seed.artist))
-        val artistCounts = mutableMapOf<String, Int>()
-        return candidates.distinctBy { it.pageUrl }.filter { candidate ->
-            candidate.pageUrl != seed.pageUrl && isMusic(candidate) && seenSongs.add(tokens(candidate.title) to tokens(candidate.artist))
-        }.mapIndexed { rank, track ->
-            val artist = tokens(track.artist).sorted().joinToString(" ")
-            val repeats = artistCounts.getOrDefault(artist, 0)
-            artistCounts[artist] = repeats + 1
-            val weight = (1.0 / (1.0 + rank * 0.025)) / (1.0 + repeats * 0.6)
-            track to (-ln(random.nextDouble().coerceAtLeast(1e-12)) / weight)
-        }.sortedBy { it.second }.map { it.first }.take(30)
+        val pool = candidates.distinctBy { it.id }.distinctBy { it.pageUrl }.filter { candidate ->
+            candidate.id != seed.id && candidate.pageUrl != seed.pageUrl && isMusic(candidate) &&
+                seenSongs.add(tokens(candidate.title) to tokens(candidate.artist))
+        }.mapIndexed { rank, track -> rank to track }.toMutableList()
+        val artistCounts = mutableMapOf<Set<String>, Int>()
+        var previousArtist = tokens(seed.artist)
+        val result = mutableListOf<MusicTrack>()
+        while (pool.isNotEmpty() && result.size < 30) {
+            // Spread artists across the actual queue while respecting source relevance.
+            val alternatives = pool.filter { tokens(it.second.artist) != previousArtist }
+            val eligible = alternatives.ifEmpty { pool }
+            val chosen = eligible.minBy { (rank, track) ->
+                val repeats = artistCounts.getOrDefault(tokens(track.artist), 0)
+                val weight = 1.0 / ((1.0 + rank * 0.15) * (1.0 + repeats * 1.5))
+                -ln(random.nextDouble().coerceAtLeast(1e-12)) / weight
+            }
+            pool.remove(chosen)
+            result.add(chosen.second)
+            previousArtist = tokens(chosen.second.artist)
+            artistCounts[previousArtist] = artistCounts.getOrDefault(previousArtist, 0) + 1
+        }
+        return result
     }
 }
