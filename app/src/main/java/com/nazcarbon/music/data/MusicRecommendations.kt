@@ -26,6 +26,16 @@ object MusicRecommendations {
 
     fun isMusic(track: MusicTrack): Boolean = track.durationSeconds in 30..1200 && !noise.containsMatchIn(track.title)
 
+    /** Exclude both source identities and normalized recordings across discovery pages. */
+    fun discovery(seed: MusicTrack, candidates: List<MusicTrack>, history: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
+        val ids = history.map { it.id }.toSet()
+        val urls = history.map { it.pageUrl }.toSet()
+        val recordings = history.map { tokens(it.title) to tokens(it.artist) }.toSet()
+        return radio(seed, candidates.filter {
+            it.id !in ids && it.pageUrl !in urls && (tokens(it.title) to tokens(it.artist)) !in recordings
+        }, random)
+    }
+
     /** Weighted sampling without replacement; catalog relevance with varied artists. */
     fun radio(seed: MusicTrack, candidates: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
         val seenSongs = mutableSetOf(tokens(seed.title) to tokens(seed.artist))

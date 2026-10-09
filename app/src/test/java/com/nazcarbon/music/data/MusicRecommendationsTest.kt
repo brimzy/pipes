@@ -42,6 +42,20 @@ class MusicRecommendationsTest {
         assertTrue(radio.zipWithNext().all { (a, b) -> a.artist != b.artist })
     }
 
+    @Test fun `discovery excludes recordings from previous pages even with new source ids`() {
+        val heard = song("heard", "Fresh song (Official Audio)", "Artist - Topic")
+        val fresh = song("fresh", "Another song", "Other Artist")
+        val candidates = listOf(heard, song("upload", "Fresh song", "Artist"),
+            song("same-url", "Different metadata").copy(pageUrl = heard.pageUrl), fresh)
+        val batch = MusicRecommendations.discovery(song("seed", "Seed"), candidates, listOf(heard), Random(7))
+        assertEquals(listOf(fresh), batch)
+    }
+
+    @Test fun `discovery returns empty when all candidates were already shown`() {
+        val heard = song("heard", "Fresh song")
+        assertTrue(MusicRecommendations.discovery(song("seed", "Seed"), listOf(heard), listOf(heard), Random(7)).isEmpty())
+    }
+
     @Test fun `music radio parser rejects user videos and reads song metadata`() {
         fun row(type: String, id: String) = """{"playlistPanelVideoRenderer":{"videoId":"$id","title":{"runs":[{"text":"Song"}]},"longBylineText":{"runs":[{"text":"Artist • 1M views"}]},"lengthText":{"runs":[{"text":"3:25"}]},"navigationEndpoint":{"watchEndpoint":{"watchEndpointMusicSupportedConfigs":{"watchEndpointMusicConfig":{"musicVideoType":"$type"}}}}}}"""
         val data = JSONObject("""{"contents":[${row("MUSIC_VIDEO_TYPE_ATV", "song1234567")},${row("MUSIC_VIDEO_TYPE_UGC", "video123456") }]}""")

@@ -170,6 +170,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             PipesTheme {
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
+                val discoveryFeed = remember { com.nazcarbon.music.data.DiscoveryFeed(source) }
+                val discoveryScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 var page by remember { mutableStateOf("Home") }
                 var query by remember { mutableStateOf("") }
                 var importProgress by remember { mutableStateOf<String?>(null) }
@@ -849,7 +851,7 @@ class MainActivity : ComponentActivity() {
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true })
                                 }
                                 "Explore" -> Explore(::search)
-                                else -> Home(::search, likedArtists.toList(), playlists, current, ::startVibeRadio)
+                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
                             }
                         }
                         if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { previousPage = page; page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }, position, duration) }
@@ -1820,14 +1822,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Spacer(Modifier.height(10.dp))
             Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
                 color = Ink, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
-            Slider(
-                value = progress.coerceIn(0f, duration.coerceAtLeast(1).toFloat()),
-                onValueChange = { dragPosition = it },
-                onValueChangeFinished = { dragPosition?.let { onSeek(it.toLong()) }; dragPosition = null },
-                valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
+            CarbonSeekBar(
+                value = progress,
+                maximum = duration.coerceAtLeast(1).toFloat(),
                 enabled = seekable && duration > 0,
-                colors = SliderDefaults.colors(thumbColor = Ink, activeTrackColor = Accent, inactiveTrackColor = Ink.copy(alpha = 0.15f)),
-                modifier = Modifier.fillMaxWidth(),
+                onChange = { dragPosition = it },
+                onFinished = { dragPosition?.let { onSeek(it.toLong()) }; dragPosition = null },
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(playbackTime(progress.toLong()), color = Muted, fontSize = 12.sp)
@@ -1837,7 +1837,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
                 IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
-                FilledIconButton(onClick = toggle, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Ink, contentColor = Carbon), modifier = Modifier.size(68.dp)) {
+                CarbonPlayButton(onClick = toggle) {
                     if (buffering) PipesLoading(Modifier.size(40.dp))
                     else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", modifier = Modifier.size(34.dp))
                 }
@@ -1869,6 +1869,65 @@ private fun playbackTime(milliseconds: Long): String {
     NavigationBar(containerColor = Carbon, contentColor = Ink, windowInsets = WindowInsets(0, 0, 0, 0)) {
         listOf(Triple("Home", Icons.Default.Home, "Home"), Triple("Search", Icons.Default.Search, "Search"), Triple("Explore", Icons.Default.Explore, "Explore"), Triple("Library", Icons.Default.LibraryMusic, "Library")).forEach { (label, icon, target) ->
             NavigationBarItem(selected = page == target, onClick = { onSelect(target) }, icon = { Icon(icon, null) }, label = { Text(label, fontSize = 10.sp) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = Accent, selectedTextColor = Ink, indicatorColor = Raised, unselectedIconColor = Ink, unselectedTextColor = Ink))
+        }
+    }
+}
+
+@Composable
+private fun DiscoveryHome(
+    feed: com.nazcarbon.music.data.DiscoveryFeed, list: androidx.compose.foundation.lazy.LazyListState,
+    artists: List<String>, current: MusicTrack?, liked: Set<String>,
+    onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
+    onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    var tracks by remember { mutableStateOf(feed.snapshot()) }
+    var loading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var exhausted by remember { mutableStateOf(false) }
+    val latestCurrent by rememberUpdatedState(current)
+    val latestArtists by rememberUpdatedState(artists)
+    fun loadMore() {
+        if (loading || exhausted) return
+        loading = true
+        error = null
+        scope.launch {
+            try {
+                val batch = withContext(Dispatchers.IO) { feed.next(latestCurrent, latestArtists) }
+                tracks = tracks + batch
+                exhausted = batch.isEmpty()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { error = "Couldn't load more music. Tap to try again." }
+            finally { loading = false }
+        }
+    }
+    LaunchedEffect(Unit) { if (tracks.isEmpty()) loadMore() }
+    LaunchedEffect(list, tracks.size, loading, error, exhausted) {
+        snapshotFlow { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }.collect { last ->
+            if (tracks.isNotEmpty() && last >= tracks.size - 6 && error == null) loadMore()
+        }
+    }
+    LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
+        item(key = "discovery-header") {
+            Column(Modifier.padding(20.dp)) {
+                Text("YOUR FREQUENCY", color = Accent, fontSize = 10.sp, letterSpacing = 2.sp)
+                Spacer(Modifier.height(8.dp))
+                Text("Stay in the flow.", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                Text("Fresh discoveries from your music. Keep scrolling.", color = Muted, fontSize = 13.sp)
+            }
+        }
+        items(tracks, key = { "discover:${it.id}" }) { track ->
+            TrackRow(track, current?.id == track.id, track.id in liked, onPlay, onLike, onRadio, onSave)
+        }
+        item(key = "discovery-footer") {
+            Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                when {
+                    loading -> PipesLoading(Modifier.size(36.dp))
+                    error != null -> TextButton(onClick = { loadMore() }) { Text(error!!, color = Accent) }
+                    exhausted -> TextButton(onClick = { exhausted = false; loadMore() }) { Text("Explore another wave", color = Accent) }
+                }
+            }
         }
     }
 }
