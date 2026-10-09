@@ -3,7 +3,6 @@ package com.nazcarbon.music
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
@@ -14,8 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -36,22 +34,21 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
     Slider(value = value.coerceIn(0f, maximum), onValueChange = onChange,
         onValueChangeFinished = onFinished, valueRange = 0f..maximum, enabled = enabled,
         interactionSource = interactions, modifier = Modifier.fillMaxWidth().hoverable(interactions),
-        thumb = {
-            Box(Modifier.size(12.dp, 36.dp).drawBehind {
-                drawCircle(Brush.radialGradient(listOf(PipesPalette.Accent.copy(alpha = light * .5f), Color.Transparent), radius = 32.dp.toPx()), radius = 32.dp.toPx())
-            }.padding(horizontal = 4.dp).clip(CircleShape)
-                .background(if (enabled) PipesPalette.Text else PipesPalette.Line))
-        },
+        thumb = { Spacer(Modifier.size(0.dp)) },
         track = { state ->
             Canvas(Modifier.fillMaxWidth().height(44.dp)) {
                 val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
                 val cursor = size.width * fraction
-                if (enabled) drawRect(Brush.radialGradient(listOf(PipesPalette.Accent.copy(alpha = .08f + light * .2f), Color.Transparent), center = Offset(cursor, size.height / 2), radius = size.height * 2))
                 val count = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
                 repeat(count) { i ->
                     val x = (i + .5f) * size.width / count
                     val envelope = .25f + .75f * sin(i * .13f).let { it * it }
                     val height = (4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it })) * (1f + light * .15f)
+                    if (enabled && light > .01f) {
+                        // Light belongs to the waveform bars, with no handle or rectangular halo.
+                        val proximity = (1f - kotlin.math.abs(x - cursor) / (size.width * .25f)).coerceIn(0f, 1f)
+                        drawLine(PipesPalette.Accent.copy(alpha = light * proximity * .15f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 5.dp.toPx(), StrokeCap.Round)
+                    }
                     drawLine(if (!enabled) PipesPalette.Line else if (x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f + light * .1f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 1.3.dp.toPx(), StrokeCap.Round)
                 }
             }
@@ -63,11 +60,11 @@ internal fun CarbonPlayButton(onClick: () -> Unit, content: @Composable () -> Un
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val pressed by interactions.collectIsPressedAsState()
-    val light by animateFloatAsState(if (hovered || pressed) 1f else .15f, label = "button light")
+    val shade by animateFloatAsState(if (pressed) .12f else if (hovered) .09f else .05f, label = "button shade")
     FilledIconButton(onClick = onClick, interactionSource = interactions,
         colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = PipesPalette.Text),
-        modifier = Modifier.size(72.dp).hoverable(interactions).drawBehind {
-            drawCircle(Brush.radialGradient(listOf(PipesPalette.Accent.copy(alpha = light * .35f), Color.Transparent), radius = size.width * .8f), radius = size.width * .8f)
-        }.border(1.dp, PipesPalette.Accent.copy(alpha = .2f + light * .5f), CircleShape)
-            .background(Brush.linearGradient(listOf(PipesPalette.Text.copy(alpha = .15f + light * .1f), PipesPalette.Raised, PipesPalette.Background)), CircleShape), content = content)
+        modifier = Modifier.size(64.dp).hoverable(interactions)
+            .shadow(if (pressed) 3.dp else 10.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
+            .background(Brush.verticalGradient(listOf(Color(.14f + shade, .14f + shade, .14f + shade), PipesPalette.Raised)), CircleShape),
+        content = content)
 }

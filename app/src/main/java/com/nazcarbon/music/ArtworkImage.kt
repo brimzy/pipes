@@ -14,7 +14,7 @@ internal fun ArtworkImage(
     model: String,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Fit,
+    contentScale: ContentScale = ContentScale.Crop,
     alpha: Float = 1f,
 ) {
     val context = LocalContext.current

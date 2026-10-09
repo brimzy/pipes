@@ -1793,7 +1793,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
         val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
-        ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Fit, alpha = 0.65f)
+        ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Crop, alpha = 0.65f)
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.25f), Carbon.copy(alpha = 0.60f), Carbon.copy(alpha = 0.85f)))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
@@ -1809,7 +1809,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
             ArtworkImage(track.thumbnailUrl, "Artwork for ${track.title}",
-                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Fit)
+                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Crop)
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
