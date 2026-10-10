@@ -1,6 +1,5 @@
 package com.nazcarbon.music.data
 
-/** Session-scoped discovery: walk related-song radios without repeating recordings. */
 class DiscoveryFeed(private val source: NewPipeMusicSource) {
     @Volatile private var seen: List<MusicTrack> = emptyList()
     private val visitedSeeds = mutableSetOf<String>()
@@ -16,7 +15,6 @@ class DiscoveryFeed(private val source: NewPipeMusicSource) {
                 it.pageUrl.startsWith("https://") && it.pageUrl !in visitedSeeds
             }
             val candidates = if (seed != null) {
-                // Mark only successful requests so a network error remains retryable.
                 source.relatedSongs(seed).also { visitedSeeds += seed.pageUrl }
             } else {
                 val queries = artists.distinct().take(8) + moods

@@ -29,7 +29,6 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Spotify Authorization Code with PKCE for the native app. */
 class SpotifyAuth(private val activity: Activity) {
     private companion object {
         const val CLIENT_ID = "f087a62b4bc9468a9aab80ae0dc92c3c"

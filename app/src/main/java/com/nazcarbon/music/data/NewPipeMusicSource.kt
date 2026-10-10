@@ -25,7 +25,6 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 
-/** NewPipe's extractor uses a pluggable Downloader. Keep blocking network work off the UI thread. */
 class NewPipeMusicSource {
     private companion object {
         const val MAX_RELEASE_PAGES = 100
@@ -87,7 +86,6 @@ class NewPipeMusicSource {
             .take(12)
     }
 
-    /** Load complete artist release shelves, with cached summaries for fast repeat opens. */
     suspend fun loadArtistDiscography(artist: MusicArtist): ArtistDiscography = coroutineScope {
         val cacheKey = artist.url.canonicalChannelUrl()
         val now = System.currentTimeMillis()
@@ -98,7 +96,6 @@ class NewPipeMusicSource {
         val musicCatalog = async(Dispatchers.IO) {
             loadYouTubeMusicArtistReleases(artist)
         }.await()
-        // Search is a recovery path when YouTube provides no release shelves.
         val releases = (if (musicCatalog.isNotEmpty()) musicCatalog else {
             val albums = async(Dispatchers.IO) { searchAlbumReleases(artist) }
             val singles = async(Dispatchers.IO) { searchSingles(artist) }
@@ -437,8 +434,6 @@ class NewPipeMusicSource {
             searchMusicAlbums(query, MAX_SEARCH_PAGES)
         } }.awaitAll().flatten()
         results
-            // Album search is global, so keep releases credited to this artist while
-            // allowing featured/collaborating artists in the uploader attribution.
             .filter { it.belongsTo(artist) }
             .map { item ->
             ArtistRelease(

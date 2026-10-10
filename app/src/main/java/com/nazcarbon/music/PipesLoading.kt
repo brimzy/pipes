@@ -16,7 +16,6 @@ fun PipesLoading(modifier: Modifier = Modifier) {
     AndroidView(factory = { LoadingGif(it) }, modifier = modifier.size(64.dp))
 }
 
-/** Movie supports animated GIFs on every supported Android version, without another dependency. */
 @Suppress("DEPRECATION")
 private class LoadingGif(context: Context) : View(context) {
     private val movie = context.assets.open("loading.gif").use { Movie.decodeStream(it) }

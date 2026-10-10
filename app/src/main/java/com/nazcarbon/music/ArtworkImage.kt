@@ -8,7 +8,6 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.delay
 
-/** Retry transient CDN failures and normalize protocol-relative artwork URLs. */
 @Composable
 internal fun ArtworkImage(
     model: String,

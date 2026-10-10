@@ -143,7 +143,6 @@ class PlaybackService : MediaSessionService() {
                 val current = player.currentMediaItem ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
                 pendingTracks.clear()
                 pendingSession = null
-                // Only metadata changes: retain the stream, position and paused/playing state.
                 val extras = Bundle(current.mediaMetadata.extras ?: Bundle.EMPTY).apply {
                     putBoolean(RADIO_METADATA_KEY, true)
                     val session = java.util.UUID.randomUUID().toString()

@@ -23,12 +23,10 @@ data class AudioDownloadStatus(
     val totalBytes: Long = -1,
     val reason: Int = 0,
 ) {
-    /** DownloadManager reports byte counts that can be unknown until the response headers arrive. */
     val progress: Float?
         get() = totalBytes.takeIf { it > 0 }?.let { (downloadedBytes.toFloat() / it).coerceIn(0f, 1f) }
 }
 
-/** Keeps DownloadManager jobs and the app's category metadata in sync across app restarts. */
 object AudioDownloads {
     private const val PREF_KEY = "audio_downloads"
     private const val CATEGORIES_PREF_KEY = "audio_download_categories"
@@ -46,7 +44,6 @@ object AudioDownloads {
         "alac" to "audio/alac",
     )
 
-    /** Accept direct audio files only; streaming watch pages do not provide a lossless file to save. */
     fun validateUrl(value: String): Pair<Uri, String> {
         val uri = Uri.parse(value.trim())
         require(uri.scheme.equals("https", ignoreCase = true)) { "Use a secure HTTPS link to an audio file." }
@@ -64,7 +61,6 @@ object AudioDownloads {
         return uri to mimeType
     }
 
-    /** Store the transfer in this app's music directory so completed files remain playable offline. */
     fun enqueue(
         context: Context,
         manager: DownloadManager,
@@ -105,7 +101,6 @@ object AudioDownloads {
         }
     }.getOrDefault(emptyList())
 
-    /** The source URL is deliberately omitted because signed download links can contain credentials. */
     fun save(preferences: SharedPreferences, downloads: List<AudioDownload>) {
         val json = JSONArray().apply {
             downloads.forEach { download ->
@@ -121,7 +116,6 @@ object AudioDownloads {
         preferences.edit().putString(PREF_KEY, json.toString()).apply()
     }
 
-    /** Restore saved empty categories as well as categories referenced by older downloads. */
     fun loadCategories(preferences: SharedPreferences, downloads: List<AudioDownload>): List<String> {
         val saved = runCatching {
             val json = JSONArray(preferences.getString(CATEGORIES_PREF_KEY, "[]"))
@@ -130,7 +124,6 @@ object AudioDownloads {
         return normalizedCategories(listOf(DEFAULT_CATEGORY) + saved + downloads.map { it.category })
     }
 
-    /** Add a user category while keeping names unique without regard to letter case. */
     fun addCategory(categories: List<String>, value: String): List<String> {
         val name = value.trim()
         require(name.isNotEmpty()) { "Enter a category name." }
@@ -139,7 +132,6 @@ object AudioDownloads {
         return normalizedCategories(categories + name)
     }
 
-    /** Category removal rehomes downloads so the files remain in the library. */
     fun removeCategory(categories: List<String>, downloads: List<AudioDownload>, value: String): Pair<List<String>, List<AudioDownload>> {
         require(!value.equals(DEFAULT_CATEGORY, ignoreCase = true)) { "Unsorted is the default category and can't be removed." }
         return normalizedCategories(categories.filterNot { it.equals(value, ignoreCase = true) }) to

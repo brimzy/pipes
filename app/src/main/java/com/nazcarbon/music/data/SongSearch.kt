@@ -6,7 +6,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Serializes UI updates even if a canceled extractor call finishes late. Call from the UI thread. */
 class SongSearch(
     private val scope: CoroutineScope,
     private val search: suspend (String) -> List<MusicTrack>,

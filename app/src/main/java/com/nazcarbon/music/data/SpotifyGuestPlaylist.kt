@@ -18,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
-/** Public playlist metadata through the web player's anonymous session. No user credentials. */
 internal object SpotifyGuestPlaylist {
     private const val PAGE_SIZE = 343
     private const val ORIGIN = "https://open.spotify.com"
@@ -57,7 +56,6 @@ internal object SpotifyGuestPlaylist {
         error("Couldn't open Spotify's public playlist session.")
     }
 
-    /** Read all raw rows, including unavailable entries, before declaring an import complete. */
     internal suspend fun loadPages(progress: (Int, Int) -> Unit = { _, _ -> }, fetch: suspend (Int) -> Page): SpotifyPlaylistPreview = coroutineScope {
         val first = fetch(0)
         require(first.offset == 0 && first.total >= 0 && first.rowCount <= first.total) { "Spotify returned an invalid playlist page." }

@@ -1,6 +1,5 @@
 package com.nazcarbon.music.data
 
-/** Unknown language stays song-led; a title cannot reliably establish a country. */
 object RecommendationRegion {
     fun language(track: MusicTrack): String {
         val text = track.title + " " + track.artist

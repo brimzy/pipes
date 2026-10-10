@@ -6,7 +6,6 @@ import org.junit.Test
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Opt-in network check: PIPES_LIVE_SOURCE_TEST=1 gradle :app:testDebugUnitTest. */
 class SourceSmokeTest {
     @Test fun `search and audio extraction work against the live source`() {
         assumeTrue(System.getenv("PIPES_LIVE_SOURCE_TEST") == "1")

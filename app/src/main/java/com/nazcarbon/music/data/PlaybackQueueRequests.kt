@@ -2,7 +2,6 @@ package com.nazcarbon.music.data
 
 import java.util.UUID
 
-/** Activity and playback service share a process. Pass a small ID over Binder, never a whole playlist. */
 object PlaybackQueueRequests {
     private data class Request(val session: String, val tracks: List<MusicTrack>)
     private val requests = LinkedHashMap<String, Request>()

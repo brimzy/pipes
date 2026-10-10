@@ -17,13 +17,13 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.nazcarbon.music.data.AppRelease
+import com.nazcarbon.music.data.UpdatePromptPolicy
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Release checks run while the app is open; DownloadManager retains APK transfers across restarts. */
 internal class AppUpdateState(private val activity: ComponentActivity, private val scope: CoroutineScope) {
     private val prefs = activity.getSharedPreferences("pipes_updates", Context.MODE_PRIVATE)
     private val manager = activity.getSystemService(DownloadManager::class.java)
@@ -34,7 +34,10 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
         private set
     var checking by mutableStateOf(false)
         private set
+    var automaticChecks by mutableStateOf(prefs.getBoolean("automatic_checks", true))
+        private set
     var visible by mutableStateOf(false)
+        private set
     var ready by mutableStateOf(false)
         private set
     var progress by mutableStateOf<Float?>(null)
@@ -43,6 +46,7 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
         private set
     private var checkingJob: Job? = null
     private var verifying = false
+    private var manualRequested = false
 
     init {
         if (release == null) {
@@ -54,13 +58,38 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
 
     fun permissionError() { message = "Couldn't open install permission settings. Try again." }
 
+    fun changeAutomaticChecks(enabled: Boolean) {
+        automaticChecks = enabled
+        prefs.edit().putBoolean("automatic_checks", enabled).apply()
+        if (enabled) check(false)
+    }
+
+    fun dismiss() {
+        if (release != null) prefs.edit()
+            .putLong("remind_after", UpdatePromptPolicy.nextReminder(System.currentTimeMillis())).apply()
+        visible = false
+    }
+
+    private fun showAvailable(manual: Boolean) {
+        if ((manual || automaticChecks) && UpdatePromptPolicy.shouldPrompt(installed, release?.versionCode,
+                prefs.getLong("remind_after", 0), System.currentTimeMillis(), manual)) {
+            visible = true
+            prefs.edit().putLong("remind_after", UpdatePromptPolicy.nextReminder(System.currentTimeMillis())).apply()
+        }
+    }
+
     fun check(manual: Boolean) {
-        if (manual && downloadId != -1L) { visible = true; return }
-        if (checkingJob?.isActive == true) { if (manual) visible = true; return }
-        if (!manual && System.currentTimeMillis() - prefs.getLong("checked_at", 0) in 0 until 6 * 60 * 60 * 1000L) return
+        if (!manual && !automaticChecks) return
+        if (manual && downloadId != -1L) { showAvailable(true); return }
+        if (checkingJob?.isActive == true) { if (manual) manualRequested = true; return }
+        if (!manual && System.currentTimeMillis() - prefs.getLong("checked_at", 0) in 0 until 6 * 60 * 60 * 1000L) {
+            showAvailable(false)
+            return
+        }
+        manualRequested = manual
         checkingJob = scope.launch {
             checking = true
-            if (manual) { message = null; visible = true }
+            if (manual) message = null
             try {
                 val latest = withContext(Dispatchers.IO) {
                     val connection = URL("https://api.github.com/repos/brimzy/pipes/releases/latest").openConnection() as HttpURLConnection
@@ -76,11 +105,15 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
                 prefs.edit().putLong("checked_at", System.currentTimeMillis()).apply()
                 if (latest.versionCode > installed) {
                     if (downloadId == -1L) { release = latest; prefs.edit().putString("release", latest.encode()).apply() }
-                    visible = true; message = null
-                } else if (manual) message = "You're up to date."
+                    message = null
+                    showAvailable(manualRequested)
+                } else {
+                    if (downloadId == -1L) { release = null; prefs.edit().remove("release").apply() }
+                    if (manualRequested) message = "You're up to date."
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { if (manual) message = error.message ?: "Couldn't check for updates. Try again." }
-            finally { checking = false }
+            catch (error: Exception) { if (manualRequested) message = error.message ?: "Couldn't check for updates. Try again." }
+            finally { checking = false; manualRequested = false }
         }
     }
 
@@ -194,8 +227,8 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
         runCatching { permission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}"))) }
             .onFailure { state.permissionError() }
     }
-    if (state.visible) AlertDialog(
-        onDismissRequest = { state.visible = false },
+    if (state.visible && state.release != null) AlertDialog(
+        onDismissRequest = state::dismiss,
         title = { Text(if (state.release != null) "Pipes update · ${state.release?.tag}" else "App updates") },
         text = {
             androidx.compose.foundation.layout.Column {
@@ -204,7 +237,7 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
                     state.message != null -> state.message!!
                     state.ready -> "Update ready. Android will ask you to confirm installation. Your library and settings stay saved."
                     state.downloadId != -1L -> "Downloading update" + (state.progress?.let { " · ${(it * 100).toInt()}%" } ?: "…")
-                    else -> "A newer version is available. Download it to update Pipes."
+                    else -> "Would you like to update Pipes? Choose Later to be reminded in five days."
                 })
                 if (state.downloadId != -1L && !state.ready) {
                     val progress = state.progress
@@ -217,6 +250,6 @@ internal class AppUpdateState(private val activity: ComponentActivity, private v
                 enabled = state.ready || state.downloadId == -1L) { Text(if (state.ready) "Install update" else "Download") }
             else if (!state.checking && state.message != "You're up to date.") TextButton(onClick = { state.check(true) }) { Text("Retry") }
         },
-        dismissButton = { TextButton(onClick = { state.visible = false }) { Text("Close") } },
+        dismissButton = { TextButton(onClick = state::dismiss) { Text("Later") } },
     )
 }

@@ -7,7 +7,6 @@ import java.net.URL
 data class SpotifyFullTrack(val id: String, val title: String, val artist: String, val position: Int)
 data class SpotifyFullPlaylist(val name: String, val tracks: List<SpotifyFullTrack>, val totalTracks: Int)
 
-/** Reads all playlist item pages through Spotify's authorized Web API. */
 object SpotifyPlaylistApi {
     private const val PAGE_SIZE = 50
 

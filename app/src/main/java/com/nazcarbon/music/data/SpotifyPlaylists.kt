@@ -13,7 +13,6 @@ data class SpotifyPlaylistPreview(
     val skippedItems: Int = 0,
 )
 
-/** Imports complete public playlists through a temporary anonymous web-player session. */
 object SpotifyPlaylists {
     private val spotifyId = Regex("[A-Za-z0-9]{22}")
 

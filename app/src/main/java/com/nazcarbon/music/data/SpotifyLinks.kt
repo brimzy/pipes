@@ -6,7 +6,6 @@ import java.net.URI
 import java.net.URLEncoder
 import java.net.URL
 
-/** Reads public Spotify link metadata so Pipes can find playable catalog matches. */
 object SpotifyLinks {
     private val trackId = Regex("[A-Za-z0-9]{22}")
 
@@ -24,8 +23,6 @@ object SpotifyLinks {
         val metadata = JSONObject(readUrl("https://open.spotify.com/oembed?url=$encoded"))
         val title = metadata.optString("title").trim()
         require(title.isNotEmpty()) { "Couldn't find that Spotify track. Check the link and retry." }
-        // Spotify's documented oEmbed response has a title but no artist. Its public
-        // track page usually supplies the artist in the page title; title alone still works.
         val artist = runCatching { artistFromPage(readUrl(canonical)) }.getOrNull().orEmpty()
         return listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ")
     }

@@ -5,7 +5,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
-/** Live catalog regression. Run with PIPES_LIVE_DISCOGRAPHY_TEST=1. */
 class KendrickDiscographySmokeTest {
     @Test fun `Kendrick albums and major standalone singles appear in the catalog`() = runBlocking {
         assumeTrue(System.getenv("PIPES_LIVE_DISCOGRAPHY_TEST") == "1")

@@ -4,7 +4,6 @@ import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.random.Random
 
-/** Linear scoring over catalog candidates; no audio analysis or extra network requests. */
 object MusicRecommendations {
     private val noise = Regex("\\b(podcast|interview|reaction|tutorial|gameplay|review|explained|documentary|compilation|full album|full concert|playlist|hour mix)\\b", RegexOption.IGNORE_CASE)
     private val variants = Regex("\\b(live|cover|karaoke|nightcore|sped up|slowed|remix)\\b", RegexOption.IGNORE_CASE)
@@ -26,7 +25,6 @@ object MusicRecommendations {
 
     fun isMusic(track: MusicTrack): Boolean = track.durationSeconds in 30..1200 && !noise.containsMatchIn(track.title)
 
-    /** Exclude both source identities and normalized recordings across discovery pages. */
     fun discovery(seed: MusicTrack, candidates: List<MusicTrack>, history: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
         val ids = history.map { it.id }.toSet()
         val urls = history.map { it.pageUrl }.toSet()
@@ -36,7 +34,6 @@ object MusicRecommendations {
         }, random)
     }
 
-    /** Weighted sampling without replacement; catalog relevance with varied artists. */
     fun radio(seed: MusicTrack, candidates: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
         val seenSongs = mutableSetOf(tokens(seed.title) to tokens(seed.artist))
         val pool = candidates.distinctBy { it.id }.distinctBy { it.pageUrl }.filter { candidate ->
@@ -47,7 +44,6 @@ object MusicRecommendations {
         var previousArtist = tokens(seed.artist)
         val result = mutableListOf<MusicTrack>()
         while (pool.isNotEmpty() && result.size < 30) {
-            // Spread artists across the actual queue while respecting source relevance.
             val alternatives = pool.filter { tokens(it.second.artist) != previousArtist }
             val eligible = alternatives.ifEmpty { pool }
             val chosen = eligible.minBy { (rank, track) ->

@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import com.nazcarbon.music.ui.theme.PipesPalette
 import kotlin.math.sin
 
-/** Decorative waveform, not an amplitude measurement. Native Slider retains seeking/accessibility. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onChange: (Float) -> Unit, onFinished: () -> Unit) {
@@ -45,7 +44,6 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                     val envelope = .25f + .75f * sin(i * .13f).let { it * it }
                     val height = (4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it }))
                     if (enabled && light > .01f) {
-                        // Light belongs to the waveform bars, with no handle or rectangular halo.
                         val proximity = (1f - kotlin.math.abs(x - cursor) / (36.dp.toPx())).coerceIn(0f, 1f)
                         drawLine(PipesPalette.Accent.copy(alpha = light * proximity * .65f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 5.dp.toPx(), StrokeCap.Round)
                     }

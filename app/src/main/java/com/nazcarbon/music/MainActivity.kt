@@ -6,7 +6,7 @@ import android.app.DownloadManager
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.FolderOpen
 import android.net.Uri
 import android.os.Bundle
@@ -189,7 +189,6 @@ class MainActivity : ComponentActivity() {
                     mutableStateMapOf<String, MusicTrack>().apply {
                         (PlaylistStore.load(prefs) + PlaylistStore.load(prefs, "saved_tracks"))
                             .flatMap { it.tracks }.forEach { put(it.id, it) }
-                        // Older versions saved only IDs. Keep these songs visible and resolvable.
                         likedIds.filterNot { containsKey(it) }.forEach { id ->
                             put(id, MusicTrack(id, "Saved song", "Saved in an earlier version", 0, "", "", id))
                         }
@@ -200,7 +199,6 @@ class MainActivity : ComponentActivity() {
                     searchHistory = history
                     prefs.edit().putString("search_history", com.nazcarbon.music.data.SearchHistory.encode(history)).apply()
                 }
-                // Persist metadata as it is recovered, without storing expiring stream URLs.
                 LaunchedEffect(knownTracks.toMap(), likedIds) {
                     PlaylistStore.save(prefs, listOf(MusicPlaylist("Liked songs", likedIds.mapNotNull { knownTracks[it] })), "saved_tracks")
                 }
@@ -223,6 +221,7 @@ class MainActivity : ComponentActivity() {
                 var showNewPlaylistDialog by remember { mutableStateOf(false) }
                 var playlistName by remember { mutableStateOf("") }
                 var tracksToSave by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+                var settingsOrigin by remember { mutableStateOf("Home") }
                 var previousPage by remember { mutableStateOf("Home") }
                 var artistSearchOrigin by remember { mutableStateOf("Search") }
                 var artistQuery by remember { mutableStateOf("") }
@@ -248,7 +247,6 @@ class MainActivity : ComponentActivity() {
                 var audioQuality by remember { mutableStateOf("") }
                 val downloadManager = remember { getSystemService(DownloadManager::class.java) }
 
-                // DownloadManager keeps transfers running if this screen is recreated or the app is backgrounded.
                 LaunchedEffect(downloads) {
                     while (true) {
                         downloadStatuses = withContext(Dispatchers.IO) {
@@ -292,6 +290,7 @@ class MainActivity : ComponentActivity() {
                 }
                 BackHandler(page != "Home") {
                     page = when (page) {
+                        "Settings" -> settingsOrigin
                         "Now playing" -> previousPage
                         "Up next" -> "Now playing"
                         "Playlist" -> "Library"
@@ -620,7 +619,6 @@ class MainActivity : ComponentActivity() {
                     playbackRequest += 1
                     val activePlayer = mediaPlayer
                     if (activePlayer?.currentMediaItem?.mediaId == track.id) {
-                        // The service enables radio without resetting this item's position.
                         activePlayer.sendCustomCommand(SessionCommand("pipes.start_radio", Bundle.EMPTY), Bundle.EMPTY)
                     } else {
                         play(track, keepQueue = true, radio = true)
@@ -732,7 +730,6 @@ class MainActivity : ComponentActivity() {
                     } else "Category removed"
                 }
 
-                // Spotify search hands off to Spotify's official app or website; it does not extract a stream.
                 fun openOnSpotify(track: MusicTrack) {
                     val search = Uri.encode("${track.title} ${track.artist}")
                     runCatching {
@@ -741,7 +738,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun playDownloaded(download: AudioDownload) {
-                    // Ask DownloadManager for its content URI so Android grants playback access to the saved file.
                     val uri = downloadManager.getUriForDownloadedFile(download.id)
                     if (uri == null) {
                         notice = "This file is not ready yet."
@@ -763,7 +759,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun removeAudioDownload(download: AudioDownload) {
-                    // Stop playback before removing its backing file to avoid an invalid active media item.
                     if (current?.id == "download:${download.id}") {
                         mediaPlayer?.stop()
                         mediaPlayer?.clearMediaItems()
@@ -800,7 +795,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            if (page != "Now playing") Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { updates.check(true) })
+                            if (page !in listOf("Now playing", "Settings")) Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
                             if (page == "Now playing" && current != null) {
                                 NowPlaying(
                                     current!!,
@@ -822,6 +817,7 @@ class MainActivity : ComponentActivity() {
                                     mediaPlayer?.hasNextMediaItem() == true,
                                 )
                             } else when (page) {
+                                "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }) { RecommendationRegionPicker() }
                                 "Library" -> Library(
                                     likedIds.mapNotNull { knownTracks[it] },
                                     likedIds,
@@ -945,7 +941,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit, onUpdates: () -> Unit) {
+@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit, onSettings: () -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -953,7 +949,7 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.width(8.dp))
             Text("3.0", color = Muted, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = onUpdates) { Icon(Icons.Default.SystemUpdate, "Check for app updates", tint = Ink) }
+            IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Ink) }
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
         }
         Spacer(Modifier.height(8.dp))

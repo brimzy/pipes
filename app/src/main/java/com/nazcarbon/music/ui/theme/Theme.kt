@@ -5,7 +5,6 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-// NazCarbon DashboardView.qml: black canvas, near-black cards, off-white content.
 object PipesPalette {
     val Background = Color(0xFF000000)
     val Card = Color(0xFF090909)
