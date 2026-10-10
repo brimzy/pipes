@@ -115,6 +115,8 @@ private val Accent = PipesPalette.Accent
 private val Ink = PipesPalette.Text
 private val Muted = PipesPalette.TextSoft
 
+private val LocalAddToQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
+
 private const val RADIO_METADATA_KEY = "pipes_radio"
 private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
 private const val AUTO_QUEUE_SESSION_KEY = "pipes_auto_queue_session"
@@ -204,6 +206,7 @@ class MainActivity : ComponentActivity() {
                 var loading by remember { mutableStateOf(false) }
                 var searchError by remember { mutableStateOf<String?>(null) }
                 var error by remember { mutableStateOf<String?>(null) }
+                var queueIndex by remember { mutableStateOf(0) }
                 var queueTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var playlists by remember { mutableStateOf(PlaylistStore.load(prefs)) }
                 var downloads by remember { mutableStateOf(AudioDownloads.load(prefs)) }
@@ -274,6 +277,7 @@ class MainActivity : ComponentActivity() {
                                 item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
                                 item.mediaMetadata.extras?.getLong("pipes_duration") ?: 0, item.mediaMetadata.artworkUri?.toString().orEmpty(), "", item.mediaMetadata.extras?.getString("pipes_page_url") ?: item.mediaId)
                         }
+                        queueIndex = player.currentMediaItemIndex
                         queueTracks = (0 until player.mediaItemCount).map { index ->
                             val queued = player.getMediaItemAt(index)
                             knownTracks[queued.mediaId] ?: MusicTrack(queued.mediaId,
@@ -576,6 +580,32 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                fun addToQueue(track: MusicTrack) {
+                    if (mediaPlayer?.currentMediaItem == null) { play(track); return }
+                    lifecycleScope.launch {
+                        try {
+                            val player = mediaPlayer ?: return@launch
+                            val session = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                            val resolved = resolveForPlayback(track)
+                            if (player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) != session) {
+                                notice = "Playback changed. Add the song again."
+                                return@launch
+                            }
+                            knownTracks[resolved.id] = resolved
+                            val template = player.currentMediaItem ?: return@launch
+                            val item = musicItem(resolved, resolved.streamUrl)
+                            val extras = Bundle(item.mediaMetadata.extras).apply {
+                                putString(AUTO_QUEUE_SESSION_KEY, session)
+                                putBoolean(RADIO_METADATA_KEY, template.mediaMetadata.extras?.getBoolean(RADIO_METADATA_KEY) == true)
+                                putBoolean(AUTO_QUEUE_METADATA_KEY, template.mediaMetadata.extras?.getBoolean(AUTO_QUEUE_METADATA_KEY) == true)
+                            }
+                            player.addMediaItem(item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build()).build())
+                            notice = "Added to queue · ${track.title}"
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { notice = "Couldn't add this song to the queue. Try again." }
+                    }
+                }
+
                 fun startRadio(track: MusicTrack) {
                     if (track.pageUrl.startsWith("content://")) { notice = "Radio is available for online songs."; return }
                     queueJob?.cancel()
@@ -762,6 +792,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(error, notice) {
                     (error ?: notice)?.let { snackbar.showSnackbar(it) }
                 }
+                CompositionLocalProvider(LocalAddToQueue provides ::addToQueue) {
                 Surface(Modifier.fillMaxSize(), color = Carbon) {
                     Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
@@ -832,10 +863,9 @@ class MainActivity : ComponentActivity() {
                                         { startVibeRadio("${selectedArtist?.artist?.name.orEmpty()} songs") },
                                     )
                                 }
-                                "Up next" -> UpNext(queueTracks, current, isPlaying, radioSeed, radioLoading, { track ->
+                                "Up next" -> UpNext(queueTracks, queueIndex, current, isPlaying, radioSeed, radioLoading, { index ->
                                     mediaPlayer?.let { player ->
-                                        val index = (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
-                                        if (index != null) { player.seekTo(index, 0L); player.play() }
+                                        if (index in 0 until player.mediaItemCount) { player.seekTo(index, 0L); player.play() }
                                     }
                                 }, ::startRadio)
                                 "Playlist" -> {
@@ -859,6 +889,7 @@ class MainActivity : ComponentActivity() {
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
                     }
+                }
                 }
                 if (showDownloadDialog) {
                     DownloadAudioDialog(
@@ -1042,6 +1073,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable private fun TrackRow(track: MusicTrack, active: Boolean, liked: Boolean, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: ((MusicTrack) -> Unit)? = null, onArtist: ((String) -> Unit)? = null) {
+    val onQueue = LocalAddToQueue.current
     var menuOpen by remember(track.id) { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable { onPlay(track) }.padding(horizontal = 20.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
         ArtworkImage(model = track.thumbnailUrl, contentDescription = null, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentScale = ContentScale.Crop)
@@ -1058,6 +1090,11 @@ class MainActivity : ComponentActivity() {
                     text = { Text("Search on Spotify") },
                     leadingIcon = { Icon(Icons.Default.MusicNote, null) },
                     onClick = { menuOpen = false; onSpotify(track) },
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    leadingIcon = { Icon(Icons.Default.QueueMusic, null) },
+                    onClick = { menuOpen = false; onQueue(track) },
                 )
                 DropdownMenuItem(
                     text = { Text("Start radio from song") },
@@ -1332,14 +1369,15 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun UpNext(
     tracks: List<MusicTrack>,
+    queueIndex: Int,
     current: MusicTrack?,
     playing: Boolean,
     radioSeed: MusicTrack?,
     radioLoading: Boolean,
-    onPlay: (MusicTrack) -> Unit,
+    onPlay: (Int) -> Unit,
     onRadio: (MusicTrack) -> Unit,
 ) {
-    val following = tracks.dropWhile { it.id != current?.id }.drop(1)
+    val following = tracks.drop((queueIndex + 1).coerceAtLeast(0))
     Column(Modifier.fillMaxSize()) {
         Text("Up next", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
         Text(
@@ -1352,12 +1390,14 @@ class MainActivity : ComponentActivity() {
             color = Muted,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
         )
+        RecommendationRegionPicker()
         if (following.isEmpty()) {
             if (radioLoading) PipesLoading(modifier = Modifier.padding(24.dp))
             else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(20.dp))
         } else LazyColumn {
-            items(following, key = { it.id }) { track ->
-                TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, {})
+            items(following.size) { offset ->
+                val track = following[offset]
+                TrackRow(track, current?.id == track.id && playing, false, { onPlay(queueIndex + 1 + offset) }, {}, onRadio, {})
             }
         }
     }
@@ -1927,6 +1967,29 @@ private fun DiscoveryHome(
                     error != null -> TextButton(onClick = { loadMore() }) { Text(error!!, color = Accent) }
                     exhausted -> TextButton(onClick = { exhausted = false; loadMore() }) { Text("Explore another wave", color = Accent) }
                 }
+            }
+        }
+    }
+}
+
+@Composable private fun RecommendationRegionPicker() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("pipes", android.content.Context.MODE_PRIVATE) }
+    var region by remember { mutableStateOf(prefs.getString("recommendation_region", "AUTO") ?: "AUTO") }
+    var expanded by remember { mutableStateOf(false) }
+    val countries = remember { java.util.Locale.getISOCountries().map { it to java.util.Locale("", it).displayCountry }.sortedBy { it.second } }
+    Box(Modifier.padding(horizontal = 20.dp)) {
+        TextButton(onClick = { expanded = true }) {
+            Text("Region · " + (countries.firstOrNull { it.first == region }?.second ?: "Auto · current song"))
+        }
+        DropdownMenu(expanded, { expanded = false }, modifier = Modifier.heightIn(max = 320.dp)) {
+            DropdownMenuItem(text = { Text("Auto · current song") }, onClick = {
+                region = "AUTO"; prefs.edit().putString("recommendation_region", region).apply(); expanded = false
+            })
+            countries.forEach { (code, name) ->
+                DropdownMenuItem(text = { Text(name) }, onClick = {
+                    region = code; prefs.edit().putString("recommendation_region", code).apply(); expanded = false
+                })
             }
         }
     }

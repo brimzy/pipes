@@ -43,13 +43,16 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                 repeat(count) { i ->
                     val x = (i + .5f) * size.width / count
                     val envelope = .25f + .75f * sin(i * .13f).let { it * it }
-                    val height = (4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it })) * (1f + light * .15f)
+                    val height = (4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it }))
                     if (enabled && light > .01f) {
                         // Light belongs to the waveform bars, with no handle or rectangular halo.
-                        val proximity = (1f - kotlin.math.abs(x - cursor) / (size.width * .25f)).coerceIn(0f, 1f)
-                        drawLine(PipesPalette.Accent.copy(alpha = light * proximity * .15f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 5.dp.toPx(), StrokeCap.Round)
+                        val proximity = (1f - kotlin.math.abs(x - cursor) / (36.dp.toPx())).coerceIn(0f, 1f)
+                        drawLine(PipesPalette.Accent.copy(alpha = light * proximity * .65f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 5.dp.toPx(), StrokeCap.Round)
                     }
-                    drawLine(if (!enabled) PipesPalette.Line else if (x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f + light * .1f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 1.3.dp.toPx(), StrokeCap.Round)
+                    val glow = if (enabled) light * (1f - kotlin.math.abs(x - cursor) / 28.dp.toPx()).coerceIn(0f, 1f) else 0f
+                    val base = if (x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f)
+                    val illuminated = androidx.compose.ui.graphics.lerp(base, Color(0xFFDEFFFF), glow)
+                    drawLine(if (!enabled) PipesPalette.Line else illuminated, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 1.3.dp.toPx(), StrokeCap.Round)
                 }
             }
         })

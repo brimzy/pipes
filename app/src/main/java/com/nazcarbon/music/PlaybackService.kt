@@ -233,12 +233,13 @@ class PlaybackService : MediaSessionService() {
             var added = 0
             try {
                 val source = radioSource ?: return@launch
-                fun sessionStillActive() = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) == queueSession
+                fun sessionStillActive() = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) == queueSession &&
+                    (playlistQueue || player.currentMediaItem?.mediaId == current.mediaId)
                 val existingUrls = (0 until player.mediaItemCount).map {
                     player.getMediaItemAt(it).mediaMetadata.extras?.getString("pipes_page_url")
                 }.toSet()
                 val radioCandidates = if (playlistQueue) emptyList() else withContext(Dispatchers.IO) {
-                    source.relatedSongs(seed).filterNot { it.pageUrl in existingUrls }
+                    source.relatedSongs(seed, getSharedPreferences("pipes", MODE_PRIVATE).getString("recommendation_region", "AUTO") ?: "AUTO").filterNot { it.pageUrl in existingUrls }
                 }
                 val candidates = ArrayDeque(radioCandidates)
                 var examined = 0
@@ -281,7 +282,7 @@ class PlaybackService : MediaSessionService() {
                     putBoolean("autoplay_loading", false)
                 })
                 val activeSession = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
-                if (activeSession != queueSession || (playlistQueue && added > 0 && pendingTracks.isNotEmpty() &&
+                if (activeSession != queueSession || (!playlistQueue && player.currentMediaItem?.mediaId != current.mediaId) || (playlistQueue && added > 0 && pendingTracks.isNotEmpty() &&
                     player.mediaItemCount - player.currentMediaItemIndex - 1 <= 3)) maybeExtendQueue(player)
             }
         }

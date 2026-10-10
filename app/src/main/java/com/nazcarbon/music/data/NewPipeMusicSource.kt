@@ -504,12 +504,14 @@ class NewPipeMusicSource {
         ).also { audioCache[track.pageUrl] = System.currentTimeMillis() to it }
     }
 
-    fun relatedSongs(track: MusicTrack): List<MusicTrack> {
+    fun relatedSongs(track: MusicTrack, region: String = "AUTO"): List<MusicTrack> {
         val seed = playableTrack(track)
         val videoId = Regex("(?:[?&]v=|youtu\\.be/)([A-Za-z0-9_-]{11})")
             .find(seed.pageUrl)?.groupValues?.get(1) ?: error("This song has no radio source.")
-        val context = JSONObject().put("client", JSONObject().put("clientName", "WEB_REMIX")
-            .put("clientVersion", youtubeMusicClientVersion()).put("hl", "en").put("gl", "US"))
+        val client = JSONObject().put("clientName", "WEB_REMIX")
+            .put("clientVersion", youtubeMusicClientVersion()).put("hl", RecommendationRegion.language(seed))
+        RecommendationRegion.country(region)?.let { client.put("gl", it) }
+        val context = JSONObject().put("client", client)
         val response = youtubeMusicRequest("next", JSONObject().put("videoId", videoId)
             .put("playlistId", "RDAMVM$videoId").put("isAudioOnly", true), context)
         return MusicRecommendations.radio(seed, parseMusicRadio(response))
