@@ -6,6 +6,7 @@ import android.app.DownloadManager
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.FolderOpen
 import android.net.Uri
 import android.os.Bundle
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
         var completedPlaybackRequest = 0
         setContent {
             PipesTheme {
+                val updates = rememberAppUpdates(this@MainActivity)
+                AppUpdateDialog(this@MainActivity, updates)
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
                 val discoveryFeed = remember { com.nazcarbon.music.data.DiscoveryFeed(source) }
                 val discoveryScroll = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -797,7 +800,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            if (page != "Now playing") Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true })
+                            if (page != "Now playing") Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { updates.check(true) })
                             if (page == "Now playing" && current != null) {
                                 NowPlaying(
                                     current!!,
@@ -942,7 +945,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit) {
+@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit, onUpdates: () -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -950,6 +953,7 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.width(8.dp))
             Text("3.0", color = Muted, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = onUpdates) { Icon(Icons.Default.SystemUpdate, "Check for app updates", tint = Ink) }
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
         }
         Spacer(Modifier.height(8.dp))
