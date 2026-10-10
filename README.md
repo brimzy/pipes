@@ -1,44 +1,113 @@
-# Pipes Music
+<p align="center">
+  <img src="docs/assets/banner.svg" alt="Pipes — Your music, in motion." width="100%" />
+</p>
 
-Android music player APK releases are available on the [Releases page](https://github.com/brimzy/pipes/releases).
+<p align="center">
+  <a href="https://github.com/brimzy/pipes/releases/latest"><img src="https://img.shields.io/github/v/release/brimzy/pipes?style=flat-square&amp;label=release&amp;color=04d1f9&amp;labelColor=111111" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/Android-8.0%2B-04d1f9?style=flat-square&amp;labelColor=111111" alt="Android 8.0 or newer" />
+  <img src="https://img.shields.io/badge/Kotlin-Jetpack_Compose-04d1f9?style=flat-square&amp;labelColor=111111" alt="Built with Kotlin and Jetpack Compose" />
+</p>
 
-Install the APK directly on Android. The release supports ARM64 devices, including Snapdragon phones.
+<p align="center">
+  <strong>A music player for Android with song radio, continuous discovery, and local audio.</strong><br />
+  Black and charcoal surfaces. Cyan accents. Your library, queue, and playback in one place.
+</p>
 
+<p align="center">
+  <a href="https://github.com/brimzy/pipes/releases/latest/download/app-release.apk"><strong>Download APK</strong></a>
+  &nbsp; · &nbsp;
+  <a href="https://github.com/brimzy/pipes/releases">All releases</a>
+  &nbsp; · &nbsp;
+  <a href="#build">Build from source</a>
+  &nbsp; · &nbsp;
+  <a href="https://github.com/brimzy/pipes/issues">Report an issue</a>
+</p>
 
-The player includes a seek bar, shuffle/repeat, a live queue, and an artwork backdrop. Starting radio on the playing song preserves its position and paused/playing state.
+---
 
-Audio uses the highest-bitrate URL exposed by the source, without additional encoding. YouTube streams are compressed, not lossless. Use the folder button in the header to open local audio, including FLAC and WAV; files play in their original format through Android's audio pipeline.
+## Get started
 
-The library can download direct HTTPS audio-file links that you own or are licensed to download. Choose a category when adding a download, then play it offline from the Downloads section. Categories can be created or removed; removing one moves its downloads to Unsorted. FLAC/WAV files preserve their source audio; YouTube Music links are compressed streams and are not downloadable audio files in Pipes.
+1. Download **app-release.apk** from the [latest release](https://github.com/brimzy/pipes/releases/latest).
+2. Open the APK and allow installation from your browser or file manager if Android asks.
+3. Open Pipes. Search for music, paste a Spotify link, or use the folder button to play a local file.
 
-Paste a Spotify song or public playlist link into Search or the link button. Playlist import requires no Spotify sign-in. Pipes starts an anonymous web-player session using Spotify’s publicly served client configuration and reads every playlist page, preserving song order, repeated recordings, artwork, and duration. The supplied Favorites test playlist returns all 1,464 items: 1,462 music tracks and two restricted non-music items, which are reported as skipped. Pages load with at most three concurrent requests; incomplete or inconsistent pages fail without replacing the saved playlist. Temporary guest sessions and complete imports are cached in memory. The guest endpoint is undocumented and may require updates when Spotify changes its web player. Song links and imported playlist entries match playable YouTube Music recordings by title, artist, and duration, with a bounded match cache.
+Requires **Android 8.0 or newer**. Install new releases over the existing app to keep your library and settings.
 
-Radio uses YouTube Music's song radio for the current recording, filters out non-music videos, long mixes and duplicate recordings, then samples a varied order with artist diversity. The playback service prepares playlist and radio songs in small parallel batches and continues loading in the background. Playlist queues transfer through a small request ID within the app’s process, avoiding Android’s Binder message-size limit for large playlists. Starting radio retains the current position and paused/playing state. Loading screens use the supplied animated GIF.
+## A look inside
 
-Pipes does not play or download Spotify streams; its offline downloader accepts direct HTTPS audio-file links only.
+<p align="center">
+  <img src="docs/assets/discovery.png" alt="Pipes Home screen with a continuous music discovery feed" width="280" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/assets/player.png" alt="Pipes player with album artwork, waveform seeking, radio, and queue controls" width="280" />
+</p>
 
-Validation: `gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug`. Set `PIPES_LIVE_SPOTIFY_TEST=1` to test the supplied public playlist without signing in. Set `PIPES_LIVE_SOURCE_TEST=1` to include the optional network smoke test. Search regression tests cover debouncing, stale results, clearing a pending search, duplicate results, and retry after failure.
+## What it does
 
-Device checks: seek midway through a song and start radio while playing and paused; confirm the position does not reset. Switch songs while radio loads and check the queue. Check a small screen, large text, the search keyboard, and gesture navigation. Open a local FLAC/WAV file and verify play, pause, and seeking.
+| Feature | How it works |
+| :--- | :--- |
+| **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
+| **Song radio** | Start radio from a recording without resetting its playback position. |
+| **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
+| **Your library** | Save liked songs, create playlists, and revisit recent searches. |
+| **Spotify links** | Find a song or import a public playlist without signing in to Spotify. |
+| **Local audio** | Open files including FLAC and WAV in their original format. |
+| **Offline downloads** | Save direct HTTPS audio-file links and organize them into categories. |
 
-## Pipes 3.0
+Use a song’s **⋮ → Add to queue** action to queue it without interrupting playback.
 
-A Quickshell-inspired black and charcoal theme with restrained blue focus, selection, and progress accents. Existing playback, radio, discography, playlists, and offline download features remain available.
+## Updates & settings
 
-Liked songs now retain their metadata across restarts and updates. Existing playlist, like, artist, download, and category preference keys are preserved. Older likes saved with only an ID remain visible as “Saved song”; playing or finding them in search refreshes their metadata. Expiring stream URLs are not saved.
+Open the **gear icon** to find Settings.
 
-The Search tab shows up to 30 recent searches. Tap a query to reuse it, use its × button to delete it, or choose Clear all. Deletions persist across restarts. Queries are recorded when the debounced search starts.
+- **App updates:** Pipes checks GitHub for newer releases. Choose **Download** to get an update, then confirm installation through Android.
+- **Later:** Dismiss an update to postpone reminders for **five days**, including across restarts.
+- **Check for updates:** Check manually at any time, even during the reminder pause.
+- **Automatic checks:** Turn them on or off. Automatic prompts appear only when an update is available.
+- **Recommendation region:** Follow the current song automatically or choose a country for new recommendations.
 
-Install updates over the existing app, using APKs signed with the same release key. Keep the package ID and signing secrets unchanged; do not uninstall or clear app storage to update. Debug APKs cannot replace a release signed with a different key. Uninstalling or clearing Android app storage still removes local data. Release version codes use a 30000 base plus the workflow run number.
+Updates preserve your saved data. APKs are checked against the release checksum and installed signing key before installation.
 
-3.0 device verification: like a song, create a playlist/category, and finish a download on the previous release; install the same-key 3.0 APK over it and confirm all remain. Restart the app and check saved songs and recent searches, then delete one search and clear all and restart again. Inspect Home, Search, Library, artist releases, and the player on small screens and with large text.
+## Audio & sources
 
-Playback reliability: the service keeps CPU/network wake locks during playback, refreshes failed or stalled streams without losing the current position or pause state, and retries temporary queue failures. A repeatedly unavailable recording is skipped when another queued song is available. Artwork requests normalize CDN URLs, retry transient failures twice, and display a fallback when unavailable. Release publication now requires unit tests, a debug build, and lint to pass.
+Online playback uses YouTube Music recordings. Spotify links provide song and playlist metadata; playable matches come from YouTube Music.
 
-Home now offers a continuously expanding discovery feed, seeded by the current online song and liked artists. Scrolling near the end loads another varied batch of related music; duplicate source URLs and normalized recordings are excluded across pages. Discovered songs and the scroll position survive navigation to the player and back during the app session. Network failures offer a retry, and exhausted recommendations offer another wave.
+YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct audio-file URLs**, rather than Spotify or YouTube watch links.
 
-The player uses a handle-free decorative waveform seek bar: cyan illumination stays on the waveform while hovering, pressing, and dragging. A borderless charcoal play/pause button uses shade and a soft shadow for separation. Artwork fills its frame with centered scaling instead of leaving empty bands. The waveform is a visual treatment, not measured audio amplitude; native slider accessibility and seeking remain available.
+Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The waveform is a visual seek control, not measured audio amplitude.
 
-The Up next screen includes a saved region preference for newly fetched recommendations. Auto keeps radio tied to the playing recording, uses a language hint from title/artist scripts, and does not force a country; country cannot reliably be inferred from song metadata. Choose a country manually to provide the source with a market hint. Existing queued songs remain in order. Song menus include Add to queue without interrupting playback, and repeated songs are selected by queue position. Radio results loaded for an earlier playing song are discarded after a transition. The waveform now illuminates cyan to pale white around the seek position during touch/drag, without increasing its height.
+## Build
 
-App updates: Open the header gear to access Settings, including manual update checks, an automatic-check toggle, recommendation region preferences, and the installed version. Pipes checks the latest stable GitHub release when opened or resumed, at most once per six hours after a successful check. Automatic dialogs appear only for newer versions. Choosing Later (or dismissing the dialog) postpones prompts for five days; the deadline survives app restarts and applies even if another release arrives. A manual check in Settings bypasses the reminder deadline and works with automatic checks disabled. Up-to-date and check-error messages stay inside Settings. Newer v3.0 build numbers offer a Download button; Android DownloadManager continues the APK transfer across app restarts. Pipes verifies the GitHub SHA-256 digest, APK size, package, version, and installed signing certificate before opening Android’s installer. Allow Pipes to install apps when Android requests it, then confirm the update. Installation keeps app data. Checks and downloads do not silently install updates. Install the updater-enabled release once manually; subsequent releases can be installed through the app. Debug installations cannot accept production-signed updates.
+**Requirements:** JDK 17+, Gradle 8.14.4, Android SDK 36, and Android Build Tools 36.0.0. Configure `ANDROID_HOME` or `sdk.dir` in `local.properties` for your SDK.
+
+```bash
+git clone https://github.com/brimzy/pipes.git
+cd pipes
+gradle :app:assembleDebug
+```
+
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
+
+Run the project checks:
+
+```bash
+gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+```
+
+<details>
+<summary><strong>Optional live source tests</strong></summary>
+
+These tests make network requests and depend on the upstream services being available.
+
+```bash
+PIPES_LIVE_SOURCE_TEST=1 gradle :app:testDebugUnitTest
+PIPES_LIVE_SPOTIFY_TEST=1 gradle :app:testDebugUnitTest
+PIPES_LIVE_DISCOGRAPHY_TEST=1 gradle :app:testDebugUnitTest
+```
+
+</details>
+
+Signed releases are built and published by [GitHub Actions](https://github.com/brimzy/pipes/actions/workflows/release.yml) after the build, unit tests, and lint pass. Debug and release APKs use different signing keys and cannot replace each other directly.
+
+---
+
+Found a bug? [Open an issue](https://github.com/brimzy/pipes/issues) with your Android version, Pipes version, and steps to reproduce it.
