@@ -8,3 +8,7 @@ app/build/
 .run/
 .kotlin/
 .release-signing/
+
+# Generated Apple build outputs
+ios/Pipes.xcodeproj/
+ios/build/

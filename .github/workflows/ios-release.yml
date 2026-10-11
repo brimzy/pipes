@@ -1,0 +1,64 @@
+name: Publish iPhone release
+
+on:
+  push:
+    branches: [main]
+    paths: ['ios/**', '.github/workflows/ios-release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+      - name: Verify simulator build
+        run: >-
+          xcodebuild -project ios/Pipes.xcodeproj -scheme Pipes
+          -configuration Debug -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build
+      - name: Build iPhone app
+        run: >-
+          xcodebuild -project ios/Pipes.xcodeproj -scheme Pipes
+          -configuration Release -sdk iphoneos
+          -destination 'generic/platform=iOS'
+          -derivedDataPath build/device
+          CURRENT_PROJECT_VERSION=${{ github.run_number }}
+          CODE_SIGNING_ALLOWED=NO build
+      - name: Package sideload IPA
+        run: |
+          mkdir -p build/package/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/Pipes.app build/package/Payload/
+          cd build/package
+          zip -qr ../../Pipes-iOS.ipa Payload
+          cd ../..
+          shasum -a 256 Pipes-iOS.ipa > Pipes-iOS.ipa.sha256
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="ios-v3.0.${GITHUB_RUN_NUMBER}"
+          cat > build/release-notes.md <<NOTES
+          Native Pipes app for iPhone and iPad (iOS 17+).
+
+          Download Pipes-iOS.ipa and sign/install it using your sideloading tool. This IPA is unsigned: tapping it in Safari will not install the app.
+
+          Includes music search, YouTube embedded playback, imported audio with background playback and lock-screen controls, likes, and a queue. Online playback requires the app to stay open. Android's radio, discovery feed, Spotify imports, and offline downloader are not yet ported.
+
+          Built from ${GITHUB_SHA}. Installation and source build instructions: https://github.com/brimzy/pipes/blob/${GITHUB_SHA}/ios/README.md
+          NOTES
+          gh release create "$tag" Pipes-iOS.ipa Pipes-iOS.ipa.sha256 \
+            --target "$GITHUB_SHA" --title "Pipes for iPhone 3.0 (build ${GITHUB_RUN_NUMBER})" \
+            --notes-file build/release-notes.md --latest=false
