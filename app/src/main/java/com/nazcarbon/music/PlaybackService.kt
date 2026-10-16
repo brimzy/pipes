@@ -60,7 +60,7 @@ class PlaybackService : MediaSessionService() {
                 "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
             )
-            .setAllowCrossProtocolRedirects(true)
+            .setAllowCrossProtocolRedirects(false)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
         val player = ExoPlayer.Builder(this)
@@ -118,15 +118,31 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         mediaSession = MediaSession.Builder(this, player).setSessionActivity(openPlayer).setCallback(object : MediaSession.Callback {
-            override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
-                MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+            override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+                if (controller.uid != android.os.Process.myUid()) {
+                    if (!controller.isTrusted) return MediaSession.ConnectionResult.reject()
+                    return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS)
+                        .setAvailablePlayerCommands(Player.Commands.Builder()
+                            .add(Player.COMMAND_PLAY_PAUSE)
+                            .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                            .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                            .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                            .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+                            .add(Player.COMMAND_GET_TIMELINE).build())
+                        .build()
+                }
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                         .add(SessionCommand("pipes.start_radio", Bundle.EMPTY))
                         .add(SessionCommand("pipes.set_queue", Bundle.EMPTY)).build())
                     .build()
+            }
 
             override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo,
                 customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                if (controller.uid != android.os.Process.myUid())
+                    return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
                 if (customCommand.customAction == "pipes.set_queue") {
                     val sessionId = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
                     if (sessionId == null || args.getString("session") != sessionId)

@@ -12,3 +12,11 @@ app/build/
 # Generated Apple build outputs
 ios/Pipes.xcodeproj/
 ios/build/
+
+# Local secrets and signing material
+.env
+.env.*
+*.jks
+*.keystore
+*.p12
+*.pfx

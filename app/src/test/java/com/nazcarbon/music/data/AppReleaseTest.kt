@@ -17,6 +17,12 @@ class AppReleaseTest {
         assertFalse(update.versionCode > 30025)
         assertEquals(update, AppRelease.decode(update.encode()))
     }
+    @Test fun `version four releases map to the new version range`() {
+        val update = AppRelease.parse(release(tag = "v4.0.25"))!!
+        assertEquals(40025L, update.versionCode)
+        assertEquals(update, AppRelease.decode(update.encode()))
+        assertNull(AppRelease.decode(update.copy(versionCode = 30025).encode()))
+    }
     @Test fun `drafts prereleases and incomplete assets are ignored`() {
         assertNull(AppRelease.parse(release().put("draft", true)))
         assertNull(AppRelease.parse(release().put("prerelease", true)))

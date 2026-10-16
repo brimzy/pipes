@@ -47,7 +47,16 @@ object AudioDownloads {
     fun validateUrl(value: String): Pair<Uri, String> {
         val uri = Uri.parse(value.trim())
         require(uri.scheme.equals("https", ignoreCase = true)) { "Use a secure HTTPS link to an audio file." }
+        val parsed = java.net.URI(value.trim())
+        require(parsed.host != null && parsed.host.equals(uri.host, ignoreCase = true) &&
+            parsed.rawUserInfo == null && parsed.port == -1 && parsed.rawFragment == null && value.length <= 8192) {
+            "Download links cannot contain credentials, custom ports, or fragments."
+        }
         val host = uri.host?.lowercase().orEmpty()
+        require(host.contains('.') && !host.endsWith(".local") && !host.endsWith(".localhost") &&
+            host != "localhost" && !host.matches(Regex("[0-9.]+")) && ':' !in host) {
+            "Use a public Internet download address."
+        }
         require(host.isNotBlank()) { "Enter a valid audio file URL." }
         require(host != "youtube.com" && !host.endsWith(".youtube.com") && host != "youtu.be" && host != "music.youtube.com") {
             "YouTube Music offers compressed streams, not lossless audio downloads. Use a direct file link from a source that permits downloads."
@@ -68,16 +77,19 @@ object AudioDownloads {
         title: String,
         artist: String,
         category: String,
+        instagramVideo: Boolean = false,
     ): AudioDownload {
-        val (uri, mimeType) = validateUrl(url)
+        val (uri, mimeType) = if (instagramVideo) {
+            Uri.parse(InstagramDownloads.validateMediaUrl(url)) to "video/mp4"
+        } else validateUrl(url)
         val cleanTitle = title.trim().ifBlank { uri.lastPathSegment?.substringBeforeLast('.') ?: "Audio download" }
         val cleanArtist = artist.trim().ifBlank { "Unknown artist" }
         val cleanCategory = category.trim().ifBlank { "Unsorted" }
-        val extension = uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase().orEmpty()
+        val extension = if (instagramVideo) "mp4" else uri.lastPathSegment?.substringAfterLast('.', "")?.lowercase().orEmpty()
         val fileName = "${UUID.randomUUID()}.$extension"
         val request = DownloadManager.Request(uri)
-            .setTitle(cleanTitle)
-            .setDescription("$cleanArtist · $cleanCategory")
+            .setTitle(cleanTitle.take(200))
+            .setDescription("$cleanArtist · $cleanCategory".take(300))
             .setMimeType(mimeType)
             .setAllowedOverMetered(true)
             .setAllowedOverRoaming(false)

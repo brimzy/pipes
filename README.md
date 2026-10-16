@@ -51,7 +51,7 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Your library** | Save liked songs, create playlists, and revisit recent searches. |
 | **Spotify links** | Find a song or import a public playlist without signing in to Spotify. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
-| **Offline downloads** | Save direct HTTPS audio-file links and organize them into categories. |
+| **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
 
 Use a song’s **⋮ → Add to queue** action to queue it without interrupting playback.
 
@@ -71,9 +71,30 @@ Updates preserve your saved data. APKs are checked against the release checksum 
 
 Online playback uses YouTube Music recordings. Spotify links provide song and playlist metadata; playable matches come from YouTube Music.
 
-YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct audio-file URLs**, rather than Spotify or YouTube watch links.
+YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links.
 
 Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The waveform is a visual seek control, not measured audio amplitude.
+
+## Instagram downloads
+
+Open **Download media**, paste an `https://www.instagram.com/reel/.../` or `/p/.../` link, optionally enter a title and category, then select **Download**. Only save media you own or have permission to download.
+
+Resolution happens directly on your device against Instagram. Pipes strips tracking parameters from the post URL and accepts extracted media only from Instagram/Meta CDN hosts over HTTPS. It does not request your password, import cookies, or use third-party downloader services. Private posts, Stories, photos, and carousels are unsupported. Public posts also fail if Instagram requires login, blocks requests, or omits video metadata; this is best-effort support, not guaranteed access. Downloads remain compressed MP4 video files, including their video data.
+
+## Privacy & security
+
+These protections describe the **Android 4.0 app**; the separate iOS preview has a different implementation.
+
+- Library, likes, playlists, search history, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
+- Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.
+- Downloads use app-specific storage, without broad storage permissions. Android's system download service manages transfers and may retain download metadata and display titles in notifications. These files are not encrypted by Pipes.
+- Unrecognized media controllers are rejected. Controllers trusted by Android receive limited playback controls; only the app's own UID receives queue/radio commands and full player access. Android may trust notification listeners you explicitly enable, which can see media metadata.
+- Cleartext network traffic is disabled and playback cannot follow HTTPS-to-HTTP redirects. Direct download inputs reject embedded credentials, custom ports, literal IP addresses, and localhost names. This is input hardening, not a network firewall: direct-link hosts and redirects are still handled by Android's download service. Use sources you trust.
+- Updates still require the official repository asset URL, release checksum, matching app identity/signing certificate, and Android installation confirmation. Release signing secrets stay outside the source tree.
+
+Online features necessarily send requests to their providers: searches, playback, recommendations and artwork contact YouTube/Google; Spotify imports contact Spotify; Instagram downloads contact Instagram/Meta; update checks contact GitHub; direct downloads contact the chosen host. Those services receive your IP address and request information and apply their own privacy policies. Pipes cannot promise anonymous networking, zero data processing, protection on a rooted/compromised device, or absolute security. Offline files can be played without a network connection.
+
+To report a vulnerability, use the repository's private security reporting feature if available; avoid posting credentials or personal files in public issues.
 
 ## Build
 

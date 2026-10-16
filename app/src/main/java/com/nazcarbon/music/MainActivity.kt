@@ -237,6 +237,7 @@ class MainActivity : ComponentActivity() {
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
                 var notice by remember { mutableStateOf<String?>(null) }
                 var downloadDialogError by remember { mutableStateOf<String?>(null) }
+                var downloadResolving by remember { mutableStateOf(false) }
 
                 var position by remember { mutableLongStateOf(0L) }
                 var duration by remember { mutableLongStateOf(0L) }
@@ -694,20 +695,38 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun addAudioDownload(url: String, title: String, artist: String, category: String) {
-                    runCatching {
-                        AudioDownloads.enqueue(this@MainActivity, downloadManager, url, title, artist, category)
-                    }.onSuccess { download ->
-                        downloads = listOf(download) + downloads
-                        AudioDownloads.save(prefs, downloads)
-                        if (downloadCategories.none { it.equals(download.category, ignoreCase = true) }) {
-                            downloadCategories = AudioDownloads.addCategory(downloadCategories, download.category)
-                            AudioDownloads.saveCategories(prefs, downloadCategories)
+                    if (downloadResolving) return
+                    if (category.trim().length > 32) {
+                        downloadDialogError = "Category names can be up to 32 characters."
+                        return
+                    }
+                    downloadResolving = true
+                    downloadDialogError = null
+                    searchScope.launch {
+                        try {
+                            val download = withContext(Dispatchers.IO) {
+                                val instagram = com.nazcarbon.music.data.InstagramDownloads.isInstagram(url)
+                                val resolved = if (instagram) com.nazcarbon.music.data.InstagramDownloads.resolve(url) else url
+                                AudioDownloads.enqueue(this@MainActivity, downloadManager, resolved, title, artist, category, instagram)
+                            }
+                            downloads = listOf(download) + downloads
+                            AudioDownloads.save(prefs, downloads)
+                            if (downloadCategories.none { it.equals(download.category, ignoreCase = true) }) {
+                                downloadCategories = AudioDownloads.addCategory(downloadCategories, download.category)
+                                AudioDownloads.saveCategories(prefs, downloadCategories)
+                            }
+                            showDownloadDialog = false
+                            downloadDialogError = null
+                            notice = "Download added · ${download.category}"
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                            throw cancelled
+                        } catch (failure: IllegalArgumentException) {
+                            downloadDialogError = failure.message ?: "This media link is unsupported."
+                        } catch (_: Exception) {
+                            downloadDialogError = "Couldn't download this link. Use a direct HTTPS audio file or an accessible public Instagram video."
+                        } finally {
+                            downloadResolving = false
                         }
-                        showDownloadDialog = false
-                        downloadDialogError = null
-                        notice = "Download added · ${download.category}"
-                    }.onFailure { failure ->
-                        downloadDialogError = failure.message ?: "Couldn't start this download. Check the link and try again."
                     }
                 }
 
@@ -893,7 +912,8 @@ class MainActivity : ComponentActivity() {
                 if (showDownloadDialog) {
                     DownloadAudioDialog(
                         error = downloadDialogError,
-                        onDismiss = { showDownloadDialog = false; downloadDialogError = null },
+                        busy = downloadResolving,
+                        onDismiss = { if (!downloadResolving) { showDownloadDialog = false; downloadDialogError = null } },
                         onDownload = ::addAudioDownload,
                     )
                 }
@@ -1147,7 +1167,7 @@ class MainActivity : ComponentActivity() {
             OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                 Icon(Icons.Default.MusicNote, null)
                 Spacer(Modifier.width(6.dp))
-                Text("Download audio", maxLines = 1)
+                Text("Download media", maxLines = 1)
             }
             OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                 Icon(Icons.Default.FolderOpen, null)
@@ -1156,7 +1176,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         Text(
-            "Use a direct HTTPS link to audio you own or are licensed to download. YouTube Music streams are compressed.",
+            "Download audio or public Instagram videos you own or have permission to save.",
             color = Muted,
             fontSize = 12.sp,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
@@ -1307,6 +1327,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun DownloadAudioDialog(
     error: String?,
     onDismiss: () -> Unit,
+    busy: Boolean,
     onDownload: (String, String, String, String) -> Unit,
 ) {
     var url by remember { mutableStateOf("") }
@@ -1315,11 +1336,11 @@ class MainActivity : ComponentActivity() {
     var category by remember { mutableStateOf("Unsorted") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Download audio") },
+        title = { Text("Download media") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Add a direct HTTPS link to an audio file. FLAC and WAV keep the quality of the original file.", color = Muted, fontSize = 13.sp)
-                OutlinedTextField(url, { url = it }, label = { Text("Audio file URL") }, singleLine = true)
+                Text("Paste a direct HTTPS audio link or a public Instagram Reel/video link. Instagram videos save as MP4; playback uses their audio.", color = Muted, fontSize = 13.sp)
+                OutlinedTextField(url, { url = it }, label = { Text("Audio or Instagram URL") }, singleLine = true)
                 OutlinedTextField(title, { title = it }, label = { Text("Title") }, singleLine = true)
                 OutlinedTextField(artist, { artist = it }, label = { Text("Artist") }, singleLine = true)
                 OutlinedTextField(category, { category = it }, label = { Text("Category") }, singleLine = true)
@@ -1328,9 +1349,9 @@ class MainActivity : ComponentActivity() {
             }
         },
         confirmButton = {
-            TextButton(onClick = { onDownload(url, title, artist, category) }, enabled = url.isNotBlank()) { Text("Download") }
+            TextButton(onClick = { onDownload(url, title, artist, category) }, enabled = url.isNotBlank() && !busy) { Text(if (busy) "Resolving…" else "Download") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } },
     )
 }
 

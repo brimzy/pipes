@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -43,15 +45,15 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle -PversionCodeOverride=$((30000 + ${{ github.run_number }})) :app:assembleRelease
+        run: gradle -PversionCodeOverride=$((40000 + ${{ github.run_number }})) :app:assembleRelease
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v3.0.${GITHUB_RUN_NUMBER}"
+          tag="v4.0.${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
             app/build/outputs/apk/release/app-release.apk \
-            --title "Pipes Music 3.0 (build ${GITHUB_RUN_NUMBER})" \
+            --title "Pipes Music 4.0 (build ${GITHUB_RUN_NUMBER})" \
             --notes "Android APK built from commit ${GITHUB_SHA}." \
             --latest
