@@ -66,6 +66,12 @@ import androidx.compose.ui.unit.sp
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Text("About Pipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("Version $appVersion", style = MaterialTheme.typography.bodyMedium)
+            Text("Your music, in motion.", style = MaterialTheme.typography.bodyLarge)
+            Text("Browse record sleeves on Home and in your library. Swipe the player artwork to change songs. Public Instagram video downloads, song radio, queues, playlists, and local audio are all here.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Privacy", style = MaterialTheme.typography.titleSmall)
+            Text("Your library stays on this device. Online music, artwork, downloads, and update checks contact their providers, which receive your IP address and requests. Pipes has no analytics service.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

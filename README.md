@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>A music player for Android with song radio, continuous discovery, and local audio.</strong><br />
+  <strong>Pipes 4.0 — a music player with tactile record shelves, song radio, discovery, and local audio.</strong><br />
   Black and charcoal surfaces. Cyan accents. Your library, queue, and playback in one place.
 </p>
 
@@ -36,7 +36,7 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 ## A look inside
 
 <p align="center">
-  <img src="docs/assets/discovery.png" alt="Pipes Home screen with a continuous music discovery feed" width="280" />
+  <img src="docs/assets/library.png" alt="Pipes My Library with a paper record sleeve, vinyl, and recording details" width="280" />
   &nbsp;&nbsp;&nbsp;
   <img src="docs/assets/player.png" alt="Pipes player with album artwork, waveform seeking, radio, and queue controls" width="280" />
 </p>
@@ -54,6 +54,14 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
 
 Use a song’s **⋮ → Add to queue** action to queue it without interrupting playback.
+
+## Record shelves & gestures
+
+Home and **My Library** feature paper-toned record sleeves with vinyl, swipe-linked tilt, and a spring wobble as each record settles. Swipe horizontally to browse; scroll vertically through the recording details and the rest of your collection. Browsing never interrupts playback. Each record keeps play, like, queue, radio, and playlist actions close by; downloads and categories remain below the Library shelf.
+
+In the full player, swipe the artwork left for the next queued song or right for the previous song. The mini-player artwork supports the same gesture. Buttons remain available. The waveform seek control previews your position locally and seeks once when released, with cached drawing and smoother progress updates.
+
+The shining Pipes wordmark now shows the installed version, and Settings includes updated feature and privacy details. Recording descriptions use available track metadata; Pipes does not invent album reviews, ratings, release years, or biographies.
 
 ## Updates & settings
 

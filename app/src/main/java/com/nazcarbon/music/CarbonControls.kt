@@ -14,11 +14,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.animation.core.tween
+import kotlinx.coroutines.delay
+import kotlin.math.abs
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.nazcarbon.music.ui.theme.PipesPalette
 import kotlin.math.sin
 
@@ -35,24 +40,27 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
         interactionSource = interactions, modifier = Modifier.fillMaxWidth().hoverable(interactions),
         thumb = { Spacer(Modifier.size(0.dp)) },
         track = { state ->
-            Canvas(Modifier.fillMaxWidth().height(44.dp)) {
-                val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
-                val cursor = size.width * fraction
+            Spacer(Modifier.fillMaxWidth().height(44.dp).drawWithCache {
                 val count = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
-                repeat(count) { i ->
+                val bars = List(count) { i ->
                     val x = (i + .5f) * size.width / count
                     val envelope = .25f + .75f * sin(i * .13f).let { it * it }
-                    val height = (4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it }))
-                    if (enabled && light > .01f) {
-                        val proximity = (1f - kotlin.math.abs(x - cursor) / (36.dp.toPx())).coerceIn(0f, 1f)
-                        drawLine(PipesPalette.Accent.copy(alpha = light * proximity * .65f), Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 5.dp.toPx(), StrokeCap.Round)
-                    }
-                    val glow = if (enabled) light * (1f - kotlin.math.abs(x - cursor) / 28.dp.toPx()).coerceIn(0f, 1f) else 0f
-                    val base = if (x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f)
-                    val illuminated = androidx.compose.ui.graphics.lerp(base, Color(0xFFDEFFFF), glow)
-                    drawLine(if (!enabled) PipesPalette.Line else illuminated, Offset(x, (size.height - height) / 2), Offset(x, (size.height + height) / 2), 1.3.dp.toPx(), StrokeCap.Round)
+                    val height = 4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it })
+                    Offset(x, (size.height - height) / 2) to Offset(x, (size.height + height) / 2)
                 }
-            }
+                val radius = 28.dp.toPx()
+                val width = 1.3.dp.toPx()
+                onDrawBehind {
+                    val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
+                    val cursor = size.width * fraction
+                    for ((start, end) in bars) {
+                        val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
+                        val base = if (start.x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f)
+                        val color = androidx.compose.ui.graphics.lerp(base, Color(0xFFDEFFFF), glow)
+                        drawLine(if (enabled) color else PipesPalette.Line, start, end, width, StrokeCap.Round)
+                    }
+                }
+            })
         })
 }
 
@@ -68,4 +76,33 @@ internal fun CarbonPlayButton(onClick: () -> Unit, content: @Composable () -> Un
             .shadow(if (pressed) 3.dp else 10.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
             .background(Brush.verticalGradient(listOf(Color(.14f + shade, .14f + shade, .14f + shade), PipesPalette.Raised)), CircleShape),
         content = content)
+}
+
+@Composable
+internal fun PlayerSeekControls(position: Long, duration: Long, seekable: Boolean, playing: Boolean, onSeek: (Long) -> Unit) {
+    var drag by remember { mutableStateOf<Float?>(null) }
+    var pending by remember { mutableStateOf<Float?>(null) }
+    val animated by animateFloatAsState(position.toFloat(), tween(if (playing && pending == null) 300 else 0), label = "playhead")
+    val progress = (drag ?: pending ?: animated).coerceIn(0f, duration.coerceAtLeast(1).toFloat())
+    LaunchedEffect(position, pending) {
+        if (pending != null && abs(position - pending!!.toLong()) < 1000) pending = null
+    }
+    LaunchedEffect(pending) {
+        if (pending != null) { delay(1500); pending = null }
+    }
+    Column {
+        CarbonSeekBar(progress, duration.coerceAtLeast(1).toFloat(), seekable && duration > 0,
+            onChange = { drag = it }, onFinished = {
+                drag?.let { pending = it; onSeek(it.toLong()) }
+                drag = null
+            })
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            fun time(value: Long): String {
+                val seconds = value.coerceAtLeast(0) / 1000
+                return "%d:%02d".format(seconds / 60, seconds % 60)
+            }
+            Text(time(progress.toLong()), color = PipesPalette.TextSoft, fontSize = 12.sp)
+            Text(if (duration > 0) time(duration) else "--:--", color = PipesPalette.TextSoft, fontSize = 12.sp)
+        }
+    }
 }

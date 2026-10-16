@@ -855,6 +855,7 @@ class MainActivity : ComponentActivity() {
                                 ::playDownloaded,
                                 ::removeAudioDownload,
                                 { showNewPlaylistDialog = true },
+                                ::startRadio,
                                 )
                                 "Search" -> if (query.isBlank()) SearchHistoryPanel(searchHistory, ::search,
                                     { value -> saveHistory(searchHistory.filterNot { it == value }) }, { saveHistory(emptyList()) })
@@ -896,13 +897,13 @@ class MainActivity : ComponentActivity() {
                                         ::startRadio,
                                         ::choosePlaylist,
                                         { removePlaylist(playlist) },
-                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true })
+                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> Explore(::search)
                                 else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
                             }
                         }
-                        if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { previousPage = page; page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }, position, duration) }
+                        if (page !in listOf("Now playing", "Up next")) current?.let { MiniPlayer(it, isPlaying, { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } }, { previousPage = page; page = "Now playing" }, likedIds.contains(it.id), { skipTrack(1) }, { skipTrack(-1) }, position, duration) }
                         if (page != "Now playing") BottomNav(page) { if (it == "Search") search("") else page = it }
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
@@ -965,13 +966,12 @@ class MainActivity : ComponentActivity() {
     val keyboard = LocalSoftwareKeyboardController.current
     Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("PIPES", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
-            Spacer(Modifier.width(8.dp))
-            Text("3.0", color = Muted, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.5.sp)
+            PipesWordmark()
             Spacer(Modifier.weight(1f))
             IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Ink) }
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
         }
+        if (page != "Library") {
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = query,
@@ -989,6 +989,7 @@ class MainActivity : ComponentActivity() {
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Raised, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
         )
+        }
         if (page == "Home") Spacer(Modifier.height(2.dp))
     }
 }
@@ -1150,6 +1151,7 @@ class MainActivity : ComponentActivity() {
     onPlayDownload: (AudioDownload) -> Unit,
     onRemoveDownload: (AudioDownload) -> Unit,
     onCreatePlaylist: () -> Unit,
+    onRadio: (MusicTrack) -> Unit,
 ) {
     var selectedCategory by remember { mutableStateOf("All") }
     val categories = listOf("All") + downloadCategories
@@ -1158,30 +1160,38 @@ class MainActivity : ComponentActivity() {
     }
     val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Your library", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
-        }
-        Text("A collection built around you.", color = Muted, modifier = Modifier.padding(horizontal = 20.dp))
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
-                Icon(Icons.Default.MusicNote, null)
-                Spacer(Modifier.width(6.dp))
-                Text("Download media", maxLines = 1)
-            }
-            OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
-                Icon(Icons.Default.FolderOpen, null)
-                Spacer(Modifier.width(6.dp))
-                Text("Categories", maxLines = 1)
-            }
-        }
-        Text(
-            "Download audio or public Instagram videos you own or have permission to save.",
-            color = Muted,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
-        )
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
+            item(key = "library-records") {
+                val collection = (tracks + playlists.flatMap { it.tracks }).distinctBy { it.id }
+                RecordShelf("My Library", "Your favorites, one sleeve at a time.", collection, likedIds,
+                    onPlay, onLike, LocalAddToQueue.current, onRadio, onSave)
+            }
+            item(key = "library-tools") {
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Library tools", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
+                            Icon(Icons.Default.MusicNote, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Download media", maxLines = 1)
+                        }
+                        OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
+                            Icon(Icons.Default.FolderOpen, null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Categories", maxLines = 1)
+                        }
+                    }
+                    Text(
+                        "Download audio or public Instagram videos you own or have permission to save.",
+                        color = Muted,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+                    )
+                }
+            }
             item {
                 Text("DOWNLOADS · ${downloads.size}", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
@@ -1233,7 +1243,7 @@ class MainActivity : ComponentActivity() {
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             } else items(tracks, key = { "liked:${it.id}" }) {
-                TrackRow(it, current?.id == it.id && playing, likedIds.contains(it.id), onPlay, onLike, {}, onSave)
+                TrackRow(it, current?.id == it.id && playing, likedIds.contains(it.id), onPlay, onLike, onRadio, onSave)
             }
         }
     }
@@ -1801,12 +1811,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     }
 }
 
-@Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit, position: Long, duration: Long) {
+@Composable private fun MiniPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit, liked: Boolean, next: () -> Unit, previous: () -> Unit, position: Long, duration: Long) {
     Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(18.dp)).background(Raised).clickable(onClick = expand)) {
         ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop, alpha = 0.04f)
         Column {
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                ArtworkImage(track.thumbnailUrl, null, Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(Panel), contentScale = ContentScale.Crop)
+                SwipeArtwork(track, Modifier.size(44.dp).background(Panel, RoundedCornerShape(10.dp)), previous, next, true)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
@@ -1849,8 +1859,6 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     onArtist: () -> Unit,
     hasNext: Boolean,
 ) {
-    var dragPosition by remember(track.id) { mutableStateOf<Float?>(null) }
-    val progress = dragPosition ?: position.toFloat()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
         val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
@@ -1869,8 +1877,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
-            ArtworkImage(track.thumbnailUrl, "Artwork for ${track.title}",
-                Modifier.size(artworkSize).clip(RoundedCornerShape(24.dp)).background(Raised), contentScale = ContentScale.Crop)
+            SwipeArtwork(track, Modifier.size(artworkSize).background(Raised, RoundedCornerShape(20.dp)), previous, next, hasNext)
+            Text("Swipe the sleeve to change songs", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1883,16 +1891,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Spacer(Modifier.height(10.dp))
             Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
                 color = Ink, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
-            CarbonSeekBar(
-                value = progress,
-                maximum = duration.coerceAtLeast(1).toFloat(),
-                enabled = seekable && duration > 0,
-                onChange = { dragPosition = it },
-                onFinished = { dragPosition?.let { onSeek(it.toLong()) }; dragPosition = null },
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(playbackTime(progress.toLong()), color = Muted, fontSize = 12.sp)
-                Text(if (duration > 0) playbackTime(duration) else "--:--", color = Muted, fontSize = 12.sp)
+            key(track.id) {
+                PlayerSeekControls(position, duration, seekable, playing, onSeek)
             }
             Spacer(Modifier.height(14.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
@@ -1970,13 +1970,12 @@ private fun DiscoveryHome(
     }
     LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "discovery-header") {
-            Column(Modifier.padding(20.dp)) {
-                Text("YOUR FREQUENCY", color = Accent, fontSize = 10.sp, letterSpacing = 2.sp)
-                Spacer(Modifier.height(8.dp))
-                Text("Stay in the flow.", color = Ink, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                Text("Fresh discoveries from your music. Keep scrolling.", color = Muted, fontSize = 13.sp)
-            }
+            RecordShelf("Your rotation", "Discover something worth keeping.", tracks.take(16), liked,
+                onPlay, onLike, LocalAddToQueue.current, onRadio, onSave)
+        }
+        item(key = "discovery-list-title") {
+            Text("Keep exploring", color = Ink, fontSize = 22.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
         }
         items(tracks, key = { "discover:${it.id}" }) { track ->
             TrackRow(track, current?.id == track.id, track.id in liked, onPlay, onLike, onRadio, onSave)
