@@ -36,9 +36,9 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 ## A look inside
 
 <p align="center">
-  <img src="docs/assets/library.png" alt="Pipes My Library with a paper record sleeve, vinyl, and recording details" width="280" />
+  <img src="docs/assets/library.png" alt="Pipes My Library with a compact dark record shelf and separate description card" width="280" />
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/assets/player.png" alt="Pipes player with album artwork, waveform seeking, radio, and queue controls" width="280" />
+  <img src="docs/assets/player.png" alt="Pipes player with a tilted vinyl disc, waveform seeking, radio, and queue controls" width="280" />
 </p>
 
 ## What it does
@@ -57,9 +57,9 @@ Use a song’s **⋮ → Add to queue** action to queue it without interrupting 
 
 ## Record shelves & gestures
 
-Home and **My Library** feature paper-toned record sleeves with vinyl, swipe-linked tilt, and a spring wobble as each record settles. Swipe horizontally to browse; scroll vertically through the recording details and the rest of your collection. Browsing never interrupts playback. Each record keeps play, like, queue, radio, and playlist actions close by; downloads and categories remain below the Library shelf.
+Home and **My Library** feature compact square sleeves on a charcoal shelf, with exposed vinyl and a separate description card that follows the swipe and settles with a spring wobble. Swipe horizontally to browse; scroll vertically through the recording details and the rest of your collection. Browsing never interrupts playback. Each record keeps play, like, queue, radio, and playlist actions close by; downloads and categories remain below the Library shelf.
 
-In the full player, swipe the artwork left for the next queued song or right for the previous song. The mini-player artwork supports the same gesture. Buttons remain available. The waveform seek control previews your position locally and seeks once when released, with cached drawing and smoother progress updates.
+The full player uses a perspective vinyl disc, flattened at rest. Rotate it to preview a relative seek: it lifts under your finger, pauses playback during the gesture, then commits the seek on release and restores the previous playing/paused state. A cancelled gesture does not seek. Track buttons remain available, and the mini-player artwork still supports left/right track swipes. The waveform seek control previews your position locally and seeks once when released, with cached drawing and smoother progress updates.
 
 The shining Pipes wordmark now shows the installed version, and Settings includes updated feature and privacy details. Recording descriptions use available track metadata; Pipes does not invent album reviews, ratings, release years, or biographies.
 

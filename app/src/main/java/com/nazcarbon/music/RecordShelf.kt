@@ -5,6 +5,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -28,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -41,9 +45,9 @@ import com.nazcarbon.music.ui.theme.PipesPalette
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-private val Paper = Color(0xFFF0ECE4)
-private val PaperInk = Color(0xFF242322)
-private val PaperSoft = Color(0xFF6A665F)
+private val ShelfBackground = PipesPalette.Background
+private val ShelfText = PipesPalette.Text
+private val ShelfMuted = PipesPalette.TextSoft
 
 @Composable internal fun PipesWordmark() {
     val shine = rememberInfiniteTransition(label = "Pipes shine").animateFloat(
@@ -67,90 +71,101 @@ private val PaperSoft = Color(0xFF6A665F)
     onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
     onQueue: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit,
 ) {
+    val compact = LocalConfiguration.current.screenHeightDp < 700
     val pager = rememberPagerState(pageCount = { tracks.size })
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxWidth().background(Paper).padding(vertical = 18.dp)) {
+    Column(Modifier.fillMaxWidth().background(ShelfBackground).padding(top = 10.dp, bottom = 12.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = PaperInk, fontFamily = FontFamily.Serif, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = PaperSoft, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp))
+                Text(title, color = ShelfText, fontFamily = FontFamily.Serif, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                if (title != "My Library") Text(subtitle, color = ShelfMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 3.dp))
             }
             if (tracks.size > 1) {
                 IconButton(onClick = { scope.launch { pager.animateScrollToPage((pager.currentPage - 1).coerceAtLeast(0)) } }, enabled = pager.currentPage > 0) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous record", tint = PaperSoft)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Previous record", tint = ShelfMuted)
                 }
                 IconButton(onClick = { scope.launch { pager.animateScrollToPage((pager.currentPage + 1).coerceAtMost(tracks.lastIndex)) } }, enabled = pager.currentPage < tracks.lastIndex) {
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next record", tint = PaperSoft)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Next record", tint = ShelfMuted)
                 }
             }
         }
         if (tracks.isEmpty()) {
             Box(Modifier.fillMaxWidth().height(170.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Album, null, tint = PaperSoft, modifier = Modifier.size(64.dp))
-                    Text("Your next favorite belongs here.", color = PaperSoft, modifier = Modifier.padding(top = 14.dp))
+                    Icon(Icons.Default.Album, null, tint = ShelfMuted, modifier = Modifier.size(64.dp))
+                    Text("Your next favorite belongs here.", color = ShelfMuted, modifier = Modifier.padding(top = 14.dp))
                 }
             }
         } else {
-            HorizontalPager(state = pager, key = { tracks[it].id }, contentPadding = PaddingValues(horizontal = 22.dp),
+            HorizontalPager(state = pager, key = { tracks[it].id }, contentPadding = PaddingValues(horizontal = 32.dp),
                 pageSpacing = 18.dp, verticalAlignment = Alignment.Top,
                 modifier = Modifier.fillMaxWidth()) { index ->
                 val track = tracks[index]
                 val settle = remember { Animatable(0f) }
-                LaunchedEffect(pager.settledPage) {
-                    if (pager.settledPage == index) {
-                        settle.snapTo(-2.2f)
-                        settle.animateTo(0f, spring(dampingRatio = .38f, stiffness = 180f))
+                var lastOffset by remember { mutableFloatStateOf(0f) }
+                LaunchedEffect(pager.isScrollInProgress) {
+                    if (pager.isScrollInProgress) {
+                        settle.stop()
+                        snapshotFlow { pager.currentPage - index + pager.currentPageOffsetFraction }.collect { lastOffset = it }
+                    } else if (pager.settledPage == index) {
+                        settle.snapTo(if (lastOffset < 0) -1.6f else 1.6f)
+                        settle.animateTo(0f, spring(dampingRatio = .48f, stiffness = 220f))
                     }
                 }
                 Column(Modifier.fillMaxWidth()) {
-                    RecordSleeve(track, Modifier.fillMaxWidth().height(185.dp).graphicsLayer {
-                        val offset = (pager.currentPage - index) + pager.currentPageOffsetFraction
-                        rotationZ = offset.coerceIn(-1f, 1f) * -7f + settle.value
-                        rotationY = offset.coerceIn(-1f, 1f) * -12f
-                        translationY = abs(offset).coerceAtMost(1f) * 12.dp.toPx()
-                        cameraDistance = 20f * density
-                    })
-                    HorizontalDivider(color = Color(0xFFD5CFC5), modifier = Modifier.padding(bottom = 14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("RECORD / ${index + 1}", color = PaperSoft, fontSize = 10.sp, letterSpacing = 1.6.sp)
-                        Text("${index + 1} / ${tracks.size}", color = PaperSoft, fontSize = 10.sp)
-                    }
-                    Text(track.title, color = PaperInk, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold,
-                        fontSize = 27.sp, lineHeight = 31.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 6.dp).heightIn(min = 34.dp))
-                    Text(track.artist, color = PaperSoft, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 6.dp))
-                    val duration = if (track.durationSeconds > 0) "${track.durationSeconds / 60} min ${track.durationSeconds % 60} sec" else "Duration available during playback"
-                    Text(duration, color = PaperSoft, fontSize = 11.sp, modifier = Modifier.padding(top = 5.dp))
-                    Text(recordDescription(track), color = PaperSoft, fontSize = 13.sp, lineHeight = 20.sp,
-                        modifier = Modifier.padding(top = 12.dp), maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        listOf(if (track.pageUrl.startsWith("content://")) "On device" else "Online", if (track.id in liked) "In your collection" else "Discovery").forEach {
-                            Text(it, color = PaperSoft, fontSize = 10.sp, modifier = Modifier.clip(RoundedCornerShape(5.dp))
-                                .background(Color(0xFFE5DFD5)).padding(horizontal = 9.dp, vertical = 5.dp))
+                    RecordSleeve(track, Modifier.fillMaxWidth().height(if (compact) 120.dp else 150.dp).graphicsLayer {
+                        val offset = ((pager.currentPage - index) + pager.currentPageOffsetFraction).coerceIn(-1f, 1f)
+                        rotationY = offset * -8f
+                        cameraDistance = 24f * density
+                    }, wobble = { settle.value })
+                    HorizontalDivider(color = PipesPalette.Line, modifier = Modifier.padding(bottom = 12.dp))
+                    Column(Modifier.fillMaxWidth().graphicsLayer {
+                        val offset = ((pager.currentPage - index) + pager.currentPageOffsetFraction).coerceIn(-1f, 1f)
+                        translationX = -offset * size.width * .08f
+                        rotationY = offset * 14f
+                        rotationZ = settle.value * .45f
+                        cameraDistance = 24f * density
+                        alpha = 1f - abs(offset) * .3f
+                    }.shadow(8.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp))
+                        .background(PipesPalette.Raised).border(1.dp, PipesPalette.Line, RoundedCornerShape(14.dp))
+                        .height(if (compact) 224.dp else 264.dp).padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("RECORDING", color = PipesPalette.Accent, fontSize = 9.sp, lineHeight = 12.sp, letterSpacing = 1.4.sp)
+                            Text("${index + 1} / ${tracks.size}", color = ShelfMuted, fontSize = 10.sp, lineHeight = 12.sp)
                         }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalButton(onClick = { onPlay(track) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = PaperInk, contentColor = Paper)) {
-                            Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp)); Text("Play record")
+                        Text(track.title, color = ShelfText, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold,
+                            fontSize = 23.sp, lineHeight = 27.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp).heightIn(min = 28.dp))
+                        Text(track.artist, color = ShelfMuted, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp))
+                        val duration = if (track.durationSeconds > 0) "${track.durationSeconds / 60} min ${track.durationSeconds % 60} sec" else "Duration available during playback"
+                        Text(duration, color = ShelfMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 3.dp))
+                        key(track.id) {
+                            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 7.dp)) {
+                                Text(recordDescription(track), color = ShelfMuted, fontSize = 12.sp, lineHeight = 18.sp)
+                            }
                         }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = { onLike(track) }) { Icon(if (track.id in liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                            if (track.id in liked) "Unlike song" else "Like song", tint = PaperInk) }
-                        var menu by remember(track.id) { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Record options", tint = PaperInk) }
-                            DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem({ Text("Add to queue") }, { menu = false; onQueue(track) })
-                                DropdownMenuItem({ Text("Start song radio") }, { menu = false; onRadio(track) }, enabled = !track.pageUrl.startsWith("content://"))
-                                DropdownMenuItem({ Text("Save to playlist") }, { menu = false; onSave(track) })
+                        Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            FilledTonalButton(onClick = { onPlay(track) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = PipesPalette.Accent, contentColor = PipesPalette.Background)) {
+                                Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp)); Text("Play record")
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { onLike(track) }) { Icon(if (track.id in liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                if (track.id in liked) "Unlike song" else "Like song", tint = if (track.id in liked) PipesPalette.Accent else ShelfText) }
+                            var menu by remember(track.id) { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "Record options", tint = ShelfText) }
+                                DropdownMenu(menu, { menu = false }) {
+                                    DropdownMenuItem({ Text("Add to queue") }, { menu = false; onQueue(track) })
+                                    DropdownMenuItem({ Text("Start song radio") }, { menu = false; onRadio(track) }, enabled = !track.pageUrl.startsWith("content://"))
+                                    DropdownMenuItem({ Text("Save to playlist") }, { menu = false; onSave(track) })
+                                }
                             }
                         }
                     }
                 }
             }
-            if (tracks.size > 1) Text("SWIPE TO BROWSE · SCROLL TO EXPLORE", color = PaperSoft, fontSize = 9.sp,
+            if (tracks.size > 1) Text("SWIPE TO BROWSE · SCROLL TO EXPLORE", color = ShelfMuted, fontSize = 9.sp, lineHeight = 12.sp,
                 letterSpacing = 1.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp))
         }
     }
@@ -164,22 +179,31 @@ internal fun recordDescription(track: MusicTrack): String = buildString {
     if (track.audioQuality.isNotBlank()) append(" ${track.audioQuality}.")
 }
 
-@Composable private fun RecordSleeve(track: MusicTrack, modifier: Modifier) {
-    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        val sleeve = minOf(maxWidth * .60f, 170.dp)
-        Box(Modifier.size(sleeve + 10.dp).offset(x = sleeve * .30f).shadow(12.dp, CircleShape)) {
-            Canvas(Modifier.fillMaxSize()) {
-                drawCircle(Brush.sweepGradient(listOf(Color(0xFF080808), Color(0xFF383838), Color(0xFF080808), Color(0xFF272727), Color(0xFF080808))))
-                for (i in 0..20) drawCircle(Color.White.copy(alpha = .06f), radius = size.minDimension * (.22f + i * .012f), style = Stroke(.7.dp.toPx()))
-            }
-            ArtworkImage(track.thumbnailUrl, null, Modifier.align(Alignment.Center).fillMaxSize(.30f).clip(CircleShape))
-            Box(Modifier.align(Alignment.Center).size(5.dp).background(Paper, CircleShape))
-        }
-        Box(Modifier.size(sleeve).offset(x = -sleeve * .12f).graphicsLayer { rotationZ = -3f }
-            .shadow(14.dp, RoundedCornerShape(2.dp)).background(Color(0xFFE2DACE))) {
+@Composable private fun RecordSleeve(track: MusicTrack, modifier: Modifier, wobble: () -> Float) {
+    BoxWithConstraints(modifier, contentAlignment = Alignment.BottomCenter) {
+        val sleeve = minOf(maxWidth * .50f, maxHeight - 8.dp, 140.dp)
+        VinylDisc(track.thumbnailUrl, Modifier.size(sleeve * .97f).align(Alignment.BottomCenter)
+            .offset(x = sleeve * .36f, y = (-7).dp).graphicsLayer { rotationZ = wobble() * 4f })
+        Box(Modifier.size(sleeve).offset(x = -sleeve * .17f, y = (-5).dp)
+            .graphicsLayer { rotationY = wobble() * 2f; cameraDistance = 24f * density }
+            .shadow(12.dp, RoundedCornerShape(1.dp)).background(PipesPalette.Raised)) {
             ArtworkImage(track.thumbnailUrl, "Record sleeve for ${track.title}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Box(Modifier.fillMaxSize().border(1.dp, Color.White.copy(alpha = .4f)))
+            Box(Modifier.fillMaxSize().border(1.dp, Color.White.copy(alpha = .12f)))
         }
+    }
+}
+
+@Composable internal fun VinylDisc(label: String, modifier: Modifier) {
+    Box(modifier.clip(CircleShape).drawWithCache {
+        val sheen = Brush.sweepGradient(listOf(Color(0xFF060606), Color(0xFF272727), Color(0xFF080808), Color(0xFF383838), Color(0xFF060606)))
+        onDrawBehind {
+            drawCircle(sheen)
+            for (i in 0..32) drawCircle(Color.White.copy(alpha = .075f), radius = size.minDimension * (.18f + i * .0095f), style = Stroke(.55.dp.toPx()))
+            drawCircle(PipesPalette.Line, style = Stroke(1.dp.toPx()))
+        }
+    }, contentAlignment = Alignment.Center) {
+        ArtworkImage(label, null, Modifier.fillMaxSize(.30f).clip(CircleShape).background(PipesPalette.Accent))
+        Box(Modifier.size(5.dp).background(PipesPalette.Background, CircleShape).border(.5.dp, PipesPalette.TextSoft, CircleShape))
     }
 }
 

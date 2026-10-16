@@ -814,7 +814,7 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            if (page !in listOf("Now playing", "Settings")) Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
+                            if (page !in listOf("Now playing", "Settings", "Library")) Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
                             if (page == "Now playing" && current != null) {
                                 NowPlaying(
                                     current!!,
@@ -834,6 +834,7 @@ class MainActivity : ComponentActivity() {
                                     { page = previousPage }, { saveToCommute(current!!) },
                                     { findArtists(current!!.artist) },
                                     mediaPlayer?.hasNextMediaItem() == true,
+                                    { mediaPlayer?.pause() }, { mediaPlayer?.play() },
                                 )
                             } else when (page) {
                                 "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }) { RecommendationRegionPicker() }
@@ -968,10 +969,11 @@ class MainActivity : ComponentActivity() {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             PipesWordmark()
             Spacer(Modifier.weight(1f))
+            if (page == "Home") IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Search, "Search music", tint = Ink) }
             IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Ink) }
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
         }
-        if (page != "Library") {
+        if (page != "Library" && page != "Home") {
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = query,
@@ -1858,12 +1860,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     onSave: () -> Unit,
     onArtist: () -> Unit,
     hasNext: Boolean,
+    onScratchPause: () -> Unit,
+    onScratchResume: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
-        val artworkSize = minOf(maxWidth - 64.dp, (maxHeight - 400.dp).coerceAtLeast(96.dp), 360.dp)
-        ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize().blur(32.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Crop, alpha = 0.65f)
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Carbon.copy(alpha = 0.25f), Carbon.copy(alpha = 0.60f), Carbon.copy(alpha = 0.85f)))))
+        Box(Modifier.matchParentSize().background(Brush.radialGradient(listOf(Accent.copy(alpha = .045f), Carbon))))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1877,8 +1879,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
-            SwipeArtwork(track, Modifier.size(artworkSize).background(Raised, RoundedCornerShape(20.dp)), previous, next, hasNext)
-            Text("Swipe the sleeve to change songs", color = Muted, fontSize = 10.sp, modifier = Modifier.padding(top = 8.dp))
+            VinylTurntable(track, playing, position, duration, seekable,
+                Modifier.fillMaxWidth().height(if (compact) 190.dp else 260.dp), onSeek, onScratchPause, onScratchResume)
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
