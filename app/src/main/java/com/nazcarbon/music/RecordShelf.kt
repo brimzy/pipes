@@ -6,8 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -74,11 +72,16 @@ private val ShelfMuted = PipesPalette.TextSoft
     val compact = LocalConfiguration.current.screenHeightDp < 700
     val pager = rememberPagerState(pageCount = { tracks.size })
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxWidth().background(ShelfBackground).padding(top = 10.dp, bottom = 12.dp)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 22.dp), verticalAlignment = Alignment.CenterVertically) {
+    val selected = tracks.getOrNull(pager.currentPage)
+    Column(Modifier.fillMaxWidth().background(ShelfBackground).padding(top = 16.dp, bottom = 8.dp)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(title, color = ShelfText, fontFamily = FontFamily.Serif, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-                if (title != "My Library") Text(subtitle, color = ShelfMuted, fontSize = 11.sp, lineHeight = 16.sp, modifier = Modifier.padding(top = 3.dp))
+                Text(title.uppercase(), color = PipesPalette.Accent, fontSize = 10.sp, letterSpacing = 1.6.sp, fontWeight = FontWeight.Bold)
+                Text(selected?.title ?: "Your collection", color = ShelfText, fontFamily = FontFamily.Serif,
+                    fontSize = 22.sp, lineHeight = 27.sp, fontWeight = FontWeight.Bold,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 5.dp))
+                Text(selected?.artist ?: subtitle, color = ShelfMuted, fontSize = 12.sp, lineHeight = 16.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
             }
             if (tracks.size > 1) {
                 IconButton(onClick = { scope.launch { pager.animateScrollToPage((pager.currentPage - 1).coerceAtLeast(0)) } }, enabled = pager.currentPage > 0) {
@@ -97,17 +100,19 @@ private val ShelfMuted = PipesPalette.TextSoft
                 }
             }
         } else {
-            HorizontalPager(state = pager, key = { tracks[it].id }, contentPadding = PaddingValues(horizontal = 32.dp),
-                pageSpacing = 18.dp, verticalAlignment = Alignment.Top,
-                modifier = Modifier.fillMaxWidth()) { index ->
+            HorizontalPager(state = pager, key = { tracks[it].id }, contentPadding = PaddingValues(horizontal = 20.dp),
+                pageSpacing = 12.dp, verticalAlignment = Alignment.Top,
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) { index ->
                 val track = tracks[index]
                 val settle = remember { Animatable(0f) }
                 var lastOffset by remember { mutableFloatStateOf(0f) }
+                var hasDragged by remember { mutableStateOf(false) }
                 LaunchedEffect(pager.isScrollInProgress) {
                     if (pager.isScrollInProgress) {
-                        settle.stop()
+                        hasDragged = true
+                        settle.snapTo(0f)
                         snapshotFlow { pager.currentPage - index + pager.currentPageOffsetFraction }.collect { lastOffset = it }
-                    } else if (pager.settledPage == index) {
+                    } else if (hasDragged && pager.settledPage == index) {
                         settle.snapTo(if (lastOffset < 0) -1.6f else 1.6f)
                         settle.animateTo(0f, spring(dampingRatio = .48f, stiffness = 220f))
                     }
@@ -117,37 +122,40 @@ private val ShelfMuted = PipesPalette.TextSoft
                         val offset = ((pager.currentPage - index) + pager.currentPageOffsetFraction).coerceIn(-1f, 1f)
                         rotationY = offset * -8f
                         cameraDistance = 24f * density
-                    }, wobble = { settle.value })
+                    })
                     HorizontalDivider(color = PipesPalette.Line, modifier = Modifier.padding(bottom = 12.dp))
                     Column(Modifier.fillMaxWidth().graphicsLayer {
                         val offset = ((pager.currentPage - index) + pager.currentPageOffsetFraction).coerceIn(-1f, 1f)
                         translationX = -offset * size.width * .08f
                         rotationY = offset * 14f
-                        rotationZ = settle.value * .45f
                         cameraDistance = 24f * density
                         alpha = 1f - abs(offset) * .3f
-                    }.shadow(8.dp, RoundedCornerShape(14.dp)).clip(RoundedCornerShape(14.dp))
+                    }.clip(RoundedCornerShape(14.dp))
                         .background(PipesPalette.Raised).border(1.dp, PipesPalette.Line, RoundedCornerShape(14.dp))
-                        .height(if (compact) 224.dp else 264.dp).padding(12.dp)) {
+                        .padding(16.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("RECORDING", color = PipesPalette.Accent, fontSize = 9.sp, lineHeight = 12.sp, letterSpacing = 1.4.sp)
                             Text("${index + 1} / ${tracks.size}", color = ShelfMuted, fontSize = 10.sp, lineHeight = 12.sp)
                         }
                         Text(track.title, color = ShelfText, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold,
-                            fontSize = 23.sp, lineHeight = 27.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(top = 6.dp).heightIn(min = 28.dp))
+                            fontSize = 22.sp, lineHeight = 27.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp).heightIn(min = 28.dp).graphicsLayer {
+                                rotationZ = settle.value * 1.8f
+                                translationY = -abs(settle.value) * 2.dp.toPx()
+                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, .5f)
+                            })
                         Text(track.artist, color = ShelfMuted, fontSize = 14.sp, lineHeight = 18.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 6.dp))
                         val duration = if (track.durationSeconds > 0) "${track.durationSeconds / 60} min ${track.durationSeconds % 60} sec" else "Duration available during playback"
                         Text(duration, color = ShelfMuted, fontSize = 11.sp, lineHeight = 15.sp, modifier = Modifier.padding(top = 3.dp))
                         key(track.id) {
-                            Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(top = 7.dp)) {
+                            Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 8.dp)) {
                                 Text(recordDescription(track), color = ShelfMuted, fontSize = 12.sp, lineHeight = 18.sp)
                             }
                         }
                         Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             FilledTonalButton(onClick = { onPlay(track) }, colors = ButtonDefaults.filledTonalButtonColors(containerColor = PipesPalette.Accent, contentColor = PipesPalette.Background)) {
-                                Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp)); Text("Play record")
+                                Icon(Icons.Default.PlayArrow, null, Modifier.size(20.dp)); Spacer(Modifier.width(4.dp)); Text("Play")
                             }
                             Spacer(Modifier.weight(1f))
                             IconButton(onClick = { onLike(track) }) { Icon(if (track.id in liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -165,7 +173,7 @@ private val ShelfMuted = PipesPalette.TextSoft
                     }
                 }
             }
-            if (tracks.size > 1) Text("SWIPE TO BROWSE · SCROLL TO EXPLORE", color = ShelfMuted, fontSize = 9.sp, lineHeight = 12.sp,
+            if (tracks.size > 1) Text("SWIPE TO BROWSE", color = ShelfMuted, fontSize = 9.sp, lineHeight = 12.sp,
                 letterSpacing = 1.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 12.dp))
         }
     }
@@ -179,13 +187,12 @@ internal fun recordDescription(track: MusicTrack): String = buildString {
     if (track.audioQuality.isNotBlank()) append(" ${track.audioQuality}.")
 }
 
-@Composable private fun RecordSleeve(track: MusicTrack, modifier: Modifier, wobble: () -> Float) {
+@Composable private fun RecordSleeve(track: MusicTrack, modifier: Modifier) {
     BoxWithConstraints(modifier, contentAlignment = Alignment.BottomCenter) {
         val sleeve = minOf(maxWidth * .50f, maxHeight - 8.dp, 140.dp)
         VinylDisc(track.thumbnailUrl, Modifier.size(sleeve * .97f).align(Alignment.BottomCenter)
-            .offset(x = sleeve * .36f, y = (-7).dp).graphicsLayer { rotationZ = wobble() * 4f })
+            .offset(x = sleeve * .36f, y = (-7).dp))
         Box(Modifier.size(sleeve).offset(x = -sleeve * .17f, y = (-5).dp)
-            .graphicsLayer { rotationY = wobble() * 2f; cameraDistance = 24f * density }
             .shadow(12.dp, RoundedCornerShape(1.dp)).background(PipesPalette.Raised)) {
             ArtworkImage(track.thumbnailUrl, "Record sleeve for ${track.title}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxSize().border(1.dp, Color.White.copy(alpha = .12f)))

@@ -1160,25 +1160,25 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(categories) {
         if (selectedCategory !in categories) selectedCategory = "All"
     }
+    val collection = (tracks + playlists.flatMap { it.tracks }).distinctBy { it.id }
     val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
-            item(key = "library-records") {
-                val collection = (tracks + playlists.flatMap { it.tracks }).distinctBy { it.id }
+            if (collection.isNotEmpty()) item(key = "library-records") {
                 RecordShelf("My Library", "Your favorites, one sleeve at a time.", collection, likedIds,
                     onPlay, onLike, LocalAddToQueue.current, onRadio, onSave)
             }
             item(key = "library-tools") {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Library tools", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("YOUR COLLECTION", color = Ink, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
                     }
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                             Icon(Icons.Default.MusicNote, null)
                             Spacer(Modifier.width(6.dp))
-                            Text("Download media", maxLines = 1)
+                            Text("Download", maxLines = 1)
                         }
                         OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
                             Icon(Icons.Default.FolderOpen, null)
@@ -1222,7 +1222,7 @@ class MainActivity : ComponentActivity() {
                 Text("PLAYLISTS", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 20.dp, top = 22.dp, bottom = 8.dp))
             }
             if (playlists.isEmpty()) item {
-                Text("Save a song to create your Commute Mix.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
             } else items(playlists, key = { "playlist:${it.name}" }) { playlist ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onOpenPlaylist(playlist) }.padding(horizontal = 20.dp, vertical = 9.dp),
@@ -1971,12 +1971,8 @@ private fun DiscoveryHome(
         }
     }
     LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
-        item(key = "discovery-header") {
-            RecordShelf("Your rotation", "Discover something worth keeping.", tracks.take(16), liked,
-                onPlay, onLike, LocalAddToQueue.current, onRadio, onSave)
-        }
         item(key = "discovery-list-title") {
-            Text("Keep exploring", color = Ink, fontSize = 22.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
+            Text("Discover", color = Ink, fontSize = 22.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Serif,
                 fontWeight = FontWeight.Bold, modifier = Modifier.padding(20.dp))
         }
         items(tracks, key = { "discover:${it.id}" }) { track ->
