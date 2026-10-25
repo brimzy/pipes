@@ -31,6 +31,11 @@ object PipesPalette {
     val Success = Oxocarbon.Base0D
     val Violet = Oxocarbon.Base0E
     val Ice = Oxocarbon.Base0F
+
+    // Visible UI hierarchy: keep these roles distinct from neutral body text.
+    val Heading = Violet
+    val SongTitle = Blue
+    val Brand = Ice
 }
 
 // Explicitly map every Material role: no default Material purple/red containers.

@@ -23,7 +23,7 @@ import com.nazcarbon.music.ui.theme.PipesPalette
 
 @Composable internal fun PipesWordmark() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Pipes", color = PipesPalette.Text,
+        Text("Pipes", color = PipesPalette.Brand,
             fontSize = 24.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Bold)
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.nazcarbon.music.ui.theme.PipesPalette
 
 @Composable internal fun AppSettingsScreen(
     activity: ComponentActivity,
@@ -30,7 +31,7 @@ import androidx.compose.ui.unit.sp
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-            Text("Settings", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("Settings", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("App updates", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

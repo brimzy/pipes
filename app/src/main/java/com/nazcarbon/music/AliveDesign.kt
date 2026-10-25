@@ -73,7 +73,7 @@ import kotlin.math.roundToInt
     }
     if (actions) ModalBottomSheet(onDismissRequest = { actions = false }, containerColor = P.Card) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            Text(track.title, color = P.Text, style = MaterialTheme.typography.titleLarge)
+            Text(track.title, color = P.SongTitle, style = MaterialTheme.typography.titleLarge)
             Text(track.artist, color = P.TextSoft, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
             listOf<Pair<String, () -> Unit>>("Add to queue →" to onAdd, "← Remove from queue" to onRemove,
                 "Start song radio" to onRadio, "Save to playlist" to onSave).plus(

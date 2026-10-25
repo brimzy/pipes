@@ -84,6 +84,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1017,9 +1020,9 @@ class MainActivity : ComponentActivity() {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             PipesWordmark()
             Spacer(Modifier.weight(1f))
-            if (page == "Home") IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Search, "Search music", tint = Ink) }
-            IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Ink) }
-            IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
+            if (page == "Home") IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Search, "Search music", tint = PipesPalette.Cyan) }
+            IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Muted) }
+            IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = PipesPalette.Blue) }
         }
         AnimatedVisibility(visibleState = searchVisibility,
             enter = expandVertically(tween(280, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) + fadeIn(tween(220, 60)),
@@ -1074,7 +1077,7 @@ class MainActivity : ComponentActivity() {
                 items((listOf(current) + playlists.flatMap { it.tracks }).distinctBy { it.id }.take(12), key = { "home:${it.id}" }) { track ->
                     Column(Modifier.width(140.dp).clickable { onSearch("${track.artist} ${track.title}") }) {
                         ArtworkImage(track.thumbnailUrl, null, Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(Raised), contentScale = ContentScale.Crop)
-                        Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
+                        Text(track.title, color = PipesPalette.SongTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
                         Text(track.artist, color = Muted, fontSize = 12.sp, maxLines = 1)
                     }
                 }
@@ -1098,7 +1101,7 @@ class MainActivity : ComponentActivity() {
     var confirmClear by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Recent searches", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("Recent searches", color = PipesPalette.Heading, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (history.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Clear all") }
         }
         if (history.isEmpty()) Text("Find your next favorite. Your searches will appear here.", color = Muted, modifier = Modifier.padding(20.dp))
@@ -1123,7 +1126,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun SearchResults(query: String, tracks: List<MusicTrack>, loading: Boolean, error: String?, current: MusicTrack?, playing: Boolean, liked: Set<String>, onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit, onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onSpotify: (MusicTrack) -> Unit, onArtist: (String) -> Unit, onRetry: () -> Unit, loadingMessage: String? = null) {
     Column(Modifier.fillMaxSize()) {
-        Text(if (query.isBlank()) "Find a sound" else "Search results", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        Text(if (query.isBlank()) "Find a sound" else "Search results", color = PipesPalette.Heading, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         TextButton(onClick = { onArtist(query) }, enabled = query.isNotBlank(), modifier = Modifier.padding(horizontal = 12.dp)) {
             Icon(Icons.Default.MusicNote, null, tint = Ink)
             Spacer(Modifier.width(8.dp))
@@ -1155,7 +1158,7 @@ class MainActivity : ComponentActivity() {
             ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).carbonSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text(track.title, color = Ink, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
+                Text(track.title, color = if (active) PipesPalette.Cyan else PipesPalette.SongTitle, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                 Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp).clickable(enabled = onArtist != null) { onArtist?.invoke(track.artist) })
             }
             if (active) Icon(Icons.Default.GraphicEq, "Now playing", tint = PipesPalette.Cyan, modifier = Modifier.padding(horizontal = 8.dp).size(20.dp))
@@ -1195,7 +1198,7 @@ class MainActivity : ComponentActivity() {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
             item(key = "library-records") {
                 Column(Modifier.padding(24.dp)) {
-                    Text("Your library.", color = Ink, fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    Text("Your library.", color = PipesPalette.Heading, fontSize = 32.sp, fontWeight = FontWeight.Bold)
                     Text("${collection.size} recordings  /  ${playlists.size} playlists", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
                     Text("Swipe right to queue · left to remove · hold for actions", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 16.dp))
                 }
@@ -1207,7 +1210,7 @@ class MainActivity : ComponentActivity() {
                             QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                                 Column {
                                     ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
-                                    Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
+                                    Text(track.title, color = PipesPalette.SongTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
                                     Text(track.artist, color = Muted, maxLines = 1, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
                                 }
                             }
@@ -1219,7 +1222,7 @@ class MainActivity : ComponentActivity() {
             item(key = "library-tools") {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("YOUR COLLECTION", color = Ink, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("YOUR COLLECTION", color = PipesPalette.Cyan, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
                     }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1243,7 +1246,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Text("DOWNLOADS · ${downloads.size}", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("DOWNLOADS · ${downloads.size}", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (categories.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1267,7 +1270,7 @@ class MainActivity : ComponentActivity() {
                 DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
             }
             item {
-                Text("PLAYLISTS", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("PLAYLISTS", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (playlists.isEmpty()) item {
                 Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1281,14 +1284,14 @@ class MainActivity : ComponentActivity() {
                     }
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(playlist.name, color = Ink, fontWeight = FontWeight.Bold)
+                        Text(playlist.name, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold)
                         Text("${playlist.tracks.size} songs", color = Muted, fontSize = 12.sp)
                     }
                     Icon(Icons.Default.PlayArrow, null, tint = Ink)
                 }
             }
             item {
-                Text("LIKED SONGS", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("LIKED SONGS", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1354,7 +1357,7 @@ class MainActivity : ComponentActivity() {
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(download.title, color = Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(download.title, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${download.artist} · ${download.category}", color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     when {
@@ -1426,7 +1429,7 @@ class MainActivity : ComponentActivity() {
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(playlist.name, color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text(playlist.name, color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete playlist", tint = Ink) }
         }
         Text("${playlist.tracks.size} songs · saved on this device", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
@@ -1464,7 +1467,7 @@ class MainActivity : ComponentActivity() {
 ) {
     val following = tracks.drop((queueIndex + 1).coerceAtLeast(0))
     Column(Modifier.fillMaxSize()) {
-        Text("Up next", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
+        Text("Up next", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         Text(
             when {
                 radioLoading && radioSeed != null -> "Finding songs related to ${radioSeed.title}…"
@@ -1497,7 +1500,7 @@ class MainActivity : ComponentActivity() {
     onOpenArtist: (MusicArtist) -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
-        Text("Artists", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+        Text("Artists", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         Text("Discography search · $query", color = Muted, modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
         when {
             loading -> PipesLoading(modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
@@ -1515,7 +1518,7 @@ class MainActivity : ComponentActivity() {
                         ArtworkImage(artist.thumbnailUrl, null, Modifier.size(58.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(artist.name, color = Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(artist.name, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("Open albums, singles & radio", color = Muted, fontSize = 12.sp)
                         }
                         Text("›", color = Ink, fontSize = 26.sp)
@@ -1562,7 +1565,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(discography.artist.name, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(discography.artist.name, color = PipesPalette.Heading, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("Artist discography", color = Muted, fontSize = 13.sp)
                     }
                     Spacer(Modifier.width(10.dp))
@@ -1658,7 +1661,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     Column(Modifier.width(if (isSingle) 176.dp else 224.dp).clickable { onOpen(release) }.padding(bottom = 16.dp)) {
         ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
         Text("${(index + 1).toString().padStart(2, '0')}  /  ${release.kind.uppercase()}", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 16.dp))
-        Text(release.title, color = Ink, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
+        Text(release.title, color = PipesPalette.SongTitle, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         Text(listOfNotNull(release.year?.toString(), release.trackCount.takeIf { it > 0 }?.let { "$it tracks" }).joinToString(" · "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
     }
 }
@@ -1671,7 +1674,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         ArtworkImage(release.thumbnailUrl, null, Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(release.title, color = Ink, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(release.title, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val details = listOfNotNull(release.year?.toString(), release.kind, release.trackCount.takeIf { it > 0 }?.let { "$it tracks" })
             Text(details.joinToString(" · "), color = Muted, fontSize = 12.sp)
         }
@@ -1696,7 +1699,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             ArtworkImage(release.thumbnailUrl, null, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Raised), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(release.title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(release.title, color = PipesPalette.SongTitle, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("$artistName · ${release.kind}", color = Muted, fontSize = 12.sp)
             }
         }
@@ -1720,7 +1723,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 
 @Composable private fun Explore(onSearch: (String) -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("Explore", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        Text("Explore", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         Text("Go where the music takes you.", color = Muted, modifier = Modifier.padding(top = 5.dp, bottom = 20.dp))
         listOf("Indie essentials", "R&B after dark", "Electronic", "Quiet focus", "New & trending").forEachIndexed { index, label ->
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Raised).clickable { onSearch(listOf("indie pop", "r&b", "electronic music", "ambient focus", "new music")[index]) }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1768,7 +1771,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close player", tint = Ink) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("NOW PLAYING", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("NOW PLAYING", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                     Text("Your music, in motion", color = Muted, fontSize = 11.sp)
                 }
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
@@ -1780,7 +1783,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(track.title, color = Ink, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
                 IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -1831,7 +1834,7 @@ private fun playbackTime(milliseconds: Long): String {
         listOf("Home" to Icons.Default.Home, "Search" to Icons.Default.Search,
             "Explore" to Icons.Default.Explore, "Library" to Icons.Default.LibraryMusic).forEach { (target, icon) ->
             val selected = page == target || (target == "Library" && page == "Playlist")
-            val surface by animateColorAsState(if (selected) Accent.copy(alpha = .12f) else Color.Transparent, tween(240), label = "navigation surface")
+            val surface by animateColorAsState(if (selected) Raised else Color.Transparent, tween(240), label = "navigation surface")
             val tint by animateColorAsState(if (selected) Accent else Muted, tween(200), label = "navigation tint")
             val emphasis = animateFloatAsState(if (selected) 1f else .94f, tween(240), label = "navigation emphasis")
             Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
@@ -1895,12 +1898,15 @@ private fun DiscoveryHome(
     LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
         item(key = "discovery-list-title") {
             Column(Modifier.fillMaxWidth().padding(24.dp)) {
-                Text("Find your\nnext feeling.", color = Ink, fontSize = 40.sp, lineHeight = 44.sp,
+                Text(buildAnnotatedString {
+                    append("Find your\n")
+                    withStyle(SpanStyle(color = PipesPalette.Heading)) { append("next feeling.") }
+                }, color = Ink, fontSize = 40.sp, lineHeight = 44.sp,
                     fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: "A NEW FREQUENCY", color = Accent, fontSize = 10.sp,
                         letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = Ink) }
+                    TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = PipesPalette.Cyan) }
                 }
             }
         }
@@ -1912,10 +1918,10 @@ private fun DiscoveryHome(
                 Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).fillMaxWidth().aspectRatio(1.05f)
                     .carbonSurface(RoundedCornerShape(12.dp), 8.dp)) {
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f)))))
+                    Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Carbon.copy(alpha = .96f)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
-                        Text("01  /  IN YOUR ORBIT", color = Ink, fontSize = 10.sp, letterSpacing = 2.sp)
-                        Text(track.title, color = Ink, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
+                        Text("01  /  IN YOUR ORBIT", color = PipesPalette.Cyan, fontSize = 10.sp, letterSpacing = 2.sp)
+                        Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
                         Text(track.artist, color = Ink.copy(alpha = .7f), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                     }
                 }
@@ -1930,7 +1936,7 @@ private fun DiscoveryHome(
                         QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                             Column {
                                 ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
-                                Text(track.title, color = Ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
+                                Text(track.title, color = PipesPalette.SongTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
                                 Text(track.artist, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
                             }
                         }
