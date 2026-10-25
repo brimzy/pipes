@@ -88,7 +88,7 @@ import kotlin.math.roundToInt
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun FloatingPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit,
     next: () -> Unit, previous: () -> Unit, position: Long, duration: Long) {
-    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = 88.dp, start = 16.dp, end = 16.dp, top = 64.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = DockClearance, start = 16.dp, end = 16.dp, top = 64.dp)) {
         val density = LocalDensity.current
         val limitX = with(density) { (maxWidth - 80.dp).coerceAtLeast(0.dp).toPx() }
         val limitY = with(density) { (maxHeight - 80.dp).coerceAtLeast(0.dp).toPx() }

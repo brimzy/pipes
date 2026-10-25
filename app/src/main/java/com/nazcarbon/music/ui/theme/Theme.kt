@@ -14,7 +14,9 @@ import androidx.compose.ui.graphics.Color
 
 // Source: nyoom-engineering/base16-oxocarbon, base16-oxocarbon-dark.yaml.
 object PipesPalette {
-    val Background = Oxocarbon.Base00
+    // Intentional black canvas; the canonical Oxocarbon tokens remain unchanged.
+    val Background = Color.Black
+    val Dock = Oxocarbon.Base00
     val Card = Oxocarbon.Base01
     val Raised = Oxocarbon.Base02
     val Line = Oxocarbon.Base03

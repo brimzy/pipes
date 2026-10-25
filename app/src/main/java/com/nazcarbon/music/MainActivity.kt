@@ -938,7 +938,7 @@ class MainActivity : ComponentActivity() {
                         }
                         AnimatedVisibility(page != "Now playing", enter = fadeIn(tween(200)) + expandVertically(tween(280)),
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
-                            BottomNav(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
+                            NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
                         }
                     }
                     AnimatedVisibility(current != null && page !in listOf("Now playing", "Up next"),
@@ -948,7 +948,7 @@ class MainActivity : ComponentActivity() {
                         { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } },
                         { previousPage = page; page = "Now playing" }, { skipTrack(1) }, { skipTrack(-1) }, position, duration) }
                     }
-                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
+                    SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else DockClearance))
                     }
                 }
                 }
@@ -1829,25 +1829,6 @@ private fun playbackTime(milliseconds: Long): String {
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
-@Composable private fun BottomNav(page: String, onSelect: (String) -> Unit) {
-    Row(Modifier.fillMaxWidth().background(Carbon).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-        listOf("Home" to Icons.Default.Home, "Search" to Icons.Default.Search,
-            "Explore" to Icons.Default.Explore, "Library" to Icons.Default.LibraryMusic).forEach { (target, icon) ->
-            val selected = page == target || (target == "Library" && page == "Playlist")
-            val surface by animateColorAsState(if (selected) Raised else Color.Transparent, tween(240), label = "navigation surface")
-            val tint by animateColorAsState(if (selected) Accent else Muted, tween(200), label = "navigation tint")
-            val emphasis = animateFloatAsState(if (selected) 1f else .94f, tween(240), label = "navigation emphasis")
-            Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
-                .background(surface)
-                .clickable { onSelect(target) }.padding(vertical = 8.dp).semantics { this.selected = selected },
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp).graphicsLayer { scaleX = emphasis.value; scaleY = emphasis.value })
-                Text(target, color = tint, fontSize = 12.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
-            }
-        }
-    }
-}
 
 @Composable
 private fun DiscoveryHome(

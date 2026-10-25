@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Pipes 5.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
-  Oxocarbon charcoal surfaces. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
+  True black canvas. Oxocarbon charcoal surfaces. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -60,7 +60,9 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 ## Design & gestures
 
-Pipes uses Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
+Pipes uses a true black canvas and Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
+
+A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Spring feedback makes selection and presses responsive.
 
 Library shows artwork, playlists, likes, and downloads without record simulations. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 

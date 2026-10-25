@@ -1,0 +1,4 @@
+<resources>
+    <!-- Black canvas, distinct from canonical Oxocarbon Base00 (#161616). -->
+    <color name="pipes_background">#000000</color>
+</resources>
