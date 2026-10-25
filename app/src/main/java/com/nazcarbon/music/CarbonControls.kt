@@ -54,13 +54,13 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                     val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
                     val cursor = size.width * fraction
                     if (enabled) {
-                        drawCircle(Brush.radialGradient(listOf(PipesPalette.Text.copy(alpha = .12f + .18f * light), Color.Transparent),
+                        drawCircle(Brush.radialGradient(listOf(PipesPalette.Cyan.copy(alpha = .12f + .18f * light), Color.Transparent),
                             center = Offset(cursor, size.height / 2), radius = radius), radius, Offset(cursor, size.height / 2))
                     }
                     for ((start, end) in bars) {
                         val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
-                        val base = if (start.x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f)
-                        val color = androidx.compose.ui.graphics.lerp(base, Color(0xFFDEFFFF), glow)
+                        val base = if (start.x <= cursor) PipesPalette.Cyan else PipesPalette.Text.copy(alpha = .22f)
+                        val color = androidx.compose.ui.graphics.lerp(base, PipesPalette.Text, glow)
                         val grow = 1f + glow * .45f
                         val middle = size.height / 2
                         drawLine(if (enabled) color else PipesPalette.Line,
@@ -77,12 +77,12 @@ internal fun CarbonPlayButton(onClick: () -> Unit, content: @Composable () -> Un
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val pressed by interactions.collectIsPressedAsState()
-    val shade by animateFloatAsState(if (pressed) .12f else if (hovered) .09f else .05f, label = "button shade")
+    val shade by animateFloatAsState(if (pressed) .8f else if (hovered) .9f else 1f, label = "button shade")
     FilledIconButton(onClick = onClick, interactionSource = interactions,
-        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = PipesPalette.Text),
+        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = PipesPalette.Background),
         modifier = Modifier.size(64.dp).hoverable(interactions)
             .shadow(if (pressed) 3.dp else 10.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
-            .background(Brush.verticalGradient(listOf(Color(.14f + shade, .14f + shade, .14f + shade), PipesPalette.Raised)), CircleShape),
+            .background(PipesPalette.Accent.copy(alpha = shade), CircleShape),
         content = content)
 }
 

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 4.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
-  Oxocarbon charcoal surfaces. White signals. Your library, queue, and playback in one place.
+  <strong>Pipes 5.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  Oxocarbon charcoal surfaces. Blue, cyan, and violet accents. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -30,6 +30,8 @@
 1. Download **app-release.apk** from the [latest release](https://github.com/brimzy/pipes/releases/latest).
 2. Open the APK and allow installation from your browser or file manager if Android asks.
 3. Open Pipes. Search for music, paste a Spotify link, or use the folder button to play a local file.
+
+**Upgrading from 4.x:** download the first 5.0 APK directly from Releases. The 4.x updater does not recognize 5.x release tags. Install over the existing official app to preserve your library; 5.0 recognizes future 5.x updates.
 
 Requires **Android 8.0 or newer**. Install new releases over the existing app to keep your library and settings.
 
@@ -57,7 +59,7 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 ## Design & gestures
 
-Pipes uses an Oxocarbon charcoal palette, restrained white accents, dot-and-dash signals, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
+Pipes uses Oxocarbon charcoal surfaces with purposeful blue, cyan, and violet accents, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
 
 Library shows artwork, playlists, likes, and downloads without record simulations. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
@@ -91,7 +93,7 @@ Resolution happens directly on your device against Instagram. Pipes strips track
 
 ## Privacy & security
 
-These protections describe the **Android 4.0 app**; the separate iOS preview has a different implementation.
+These protections describe the **Android 5.0 app**; the separate iOS preview has a different implementation.
 
 - Library, likes, playlists, search history, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.

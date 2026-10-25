@@ -19,13 +19,17 @@ data class AppRelease(val tag: String, val versionCode: Long, val url: String, v
         .put("url", url).put("bytes", bytes).put("sha256", sha256).toString()
 
     companion object {
-        private fun baseCode(tag: String) = if (tag.startsWith("v4.")) 40000L else 30000L
-        private val tagPattern = Regex("v[34]\\.0\\.(\\d+)")
+        private fun baseCode(tag: String) = when {
+            tag.startsWith("v5.") -> 50000L
+            tag.startsWith("v4.") -> 40000L
+            else -> 30000L
+        }
+        private val tagPattern = Regex("v[345]\\.0\\.(\\d+)")
         fun parse(json: JSONObject): AppRelease? {
             if (json.optBoolean("draft") || json.optBoolean("prerelease")) return null
             val tag = json.optString("tag_name")
             val build = tagPattern.matchEntire(tag)?.groupValues?.get(1)?.toLongOrNull() ?: return null
-            if (build !in 1..(Int.MAX_VALUE - 40000).toLong()) return null
+            if (build !in 1..(Int.MAX_VALUE.toLong() - baseCode(tag))) return null
             val assets = json.optJSONArray("assets") ?: return null
             for (i in 0 until assets.length()) {
                 val asset = assets.optJSONObject(i) ?: continue
@@ -45,7 +49,7 @@ data class AppRelease(val tag: String, val versionCode: Long, val url: String, v
             val build = tagPattern.matchEntire(release.tag)?.groupValues?.get(1)?.toLongOrNull() ?: return null
             val uri = runCatching { URI(release.url) }.getOrNull() ?: return null
             return release.takeIf {
-                build in 1..(Int.MAX_VALUE - 40000).toLong() && it.versionCode == baseCode(it.tag) + build &&
+                build in 1..(Int.MAX_VALUE.toLong() - baseCode(release.tag)) && it.versionCode == baseCode(it.tag) + build &&
                     uri.scheme == "https" && uri.host == "github.com" && uri.rawAuthority == "github.com" &&
                     uri.rawPath == "/brimzy/pipes/releases/download/${it.tag}/app-release.apk" &&
                     uri.rawQuery == null && uri.rawFragment == null && it.bytes in 1..200_000_000 &&

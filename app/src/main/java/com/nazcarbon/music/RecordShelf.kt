@@ -13,7 +13,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,9 +21,8 @@ import com.nazcarbon.music.ui.theme.PipesPalette
 
 @Composable internal fun PipesWordmark() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("P I P E S", color = PipesPalette.Text, fontFamily = FontFamily.Monospace,
-            fontSize = 18.sp, letterSpacing = 2.sp, fontWeight = FontWeight.Medium)
-        SignalMark(Modifier.padding(start = 12.dp).width(48.dp))
+        Text("Pipes", color = PipesPalette.Text,
+            fontSize = 24.sp, letterSpacing = 0.sp, fontWeight = FontWeight.Bold)
     }
 }
 

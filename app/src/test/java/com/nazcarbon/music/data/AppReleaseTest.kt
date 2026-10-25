@@ -23,6 +23,20 @@ class AppReleaseTest {
         assertEquals(update, AppRelease.decode(update.encode()))
         assertNull(AppRelease.decode(update.copy(versionCode = 30025).encode()))
     }
+    @Test fun `version five upgrades existing installs and round trips`() {
+        val old = AppRelease.parse(release(tag = "v4.0.33"))!!
+        val update = AppRelease.parse(release(tag = "v5.0.34"))!!
+        assertEquals(50034L, update.versionCode)
+        assertTrue(update.versionCode > old.versionCode)
+        assertEquals(update, AppRelease.decode(update.encode()))
+        assertNull(AppRelease.decode(update.copy(versionCode = 40034).encode()))
+        assertNull(AppRelease.parse(release(tag = "v6.0.34")))
+    }
+    @Test fun `version five rejects Android version code overflow`() {
+        val maximum = Int.MAX_VALUE.toLong() - 50000
+        assertEquals(Int.MAX_VALUE.toLong(), AppRelease.parse(release(tag = "v5.0.$maximum"))!!.versionCode)
+        assertNull(AppRelease.parse(release(tag = "v5.0.${maximum + 1}")))
+    }
     @Test fun `drafts prereleases and incomplete assets are ignored`() {
         assertNull(AppRelease.parse(release().put("draft", true)))
         assertNull(AppRelease.parse(release().put("prerelease", true)))

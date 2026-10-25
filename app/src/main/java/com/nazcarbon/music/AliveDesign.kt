@@ -22,7 +22,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.*
 import com.nazcarbon.music.data.MusicTrack
 import com.nazcarbon.music.ui.theme.PipesPalette as P
@@ -30,19 +29,6 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // The layout uses a 4dp unit: 8 / 12 / 16 / 24 / 32, with 48dp touch targets.
-@Composable internal fun SignalMark(modifier: Modifier = Modifier, active: Boolean = true) {
-    val phase by rememberInfiniteTransition(label = "signal").animateFloat(0f, 1f,
-        infiniteRepeatable(tween(2400), RepeatMode.Reverse), label = "breath")
-    Canvas(modifier.height(24.dp).width(88.dp)) {
-        for (i in 0..6) {
-            val x = size.width * (i + .5f) / 7f
-            val alpha = if (active) .25f + .65f * (1f - abs(i / 6f - phase)) else .25f
-            if (i % 3 == 1) drawLine(P.Text.copy(alpha = alpha), Offset(x, center.y), Offset(x + size.width / 16f, center.y), 2.dp.toPx(), StrokeCap.Round)
-            else drawCircle(P.Text.copy(alpha = alpha), 1.5.dp.toPx(), Offset(x, center.y))
-        }
-    }
-}
-
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable internal fun QueueGesture(
     track: MusicTrack, onPlay: () -> Unit, onAdd: () -> Unit, onRemove: () -> Unit,
@@ -58,10 +44,10 @@ import kotlin.math.roundToInt
     val add by rememberUpdatedState(onAdd)
     val remove by rememberUpdatedState(onRemove)
     Box(Modifier.fillMaxWidth()) {
-        Row(Modifier.matchParentSize().background(P.Raised).padding(horizontal = 24.dp),
+        Row(Modifier.matchParentSize().background(if (drag > 0) P.Cyan.copy(alpha = .12f) else if (drag < 0) P.Violet.copy(alpha = .12f) else P.Raised).padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(if (drag > 0) if (armed) "+ RELEASE TO QUEUE" else "+ QUEUE" else "", color = P.Text, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-            Text(if (drag < 0) if (armed) "RELEASE TO REMOVE −" else "REMOVE −" else "", color = P.Text, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            Text(if (drag > 0) if (armed) "Release to queue" else "Add to queue" else "", color = P.Cyan, fontSize = 12.sp)
+            Text(if (drag < 0) if (armed) "Release to remove" else "Remove" else "", color = P.Violet, fontSize = 12.sp)
         }
         Box(Modifier.offset { IntOffset(offset.roundToInt(), 0) }.background(P.Background)
             .semantics {
@@ -86,7 +72,6 @@ import kotlin.math.roundToInt
     }
     if (actions) ModalBottomSheet(onDismissRequest = { actions = false }, containerColor = P.Card) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            SignalMark()
             Text(track.title, color = P.Text, style = MaterialTheme.typography.titleLarge)
             Text(track.artist, color = P.TextSoft, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
             listOf<Pair<String, () -> Unit>>("Add to queue →" to onAdd, "← Remove from queue" to onRemove,
@@ -126,7 +111,7 @@ import kotlin.math.roundToInt
             ArtworkImage(track.thumbnailUrl, null, Modifier.size(68.dp).clip(CircleShape), contentScale = ContentScale.Crop)
             Canvas(Modifier.fillMaxSize().padding(3.dp)) {
                 drawArc(P.Text.copy(alpha = .16f), -90f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
-                drawArc(P.Text, -90f, if (duration > 0) 360f * (position.toFloat() / duration).coerceIn(0f, 1f) else 0f, false,
+                drawArc(P.Cyan, -90f, if (duration > 0) 360f * (position.toFloat() / duration).coerceIn(0f, 1f) else 0f, false,
                     style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx(), cap = StrokeCap.Round))
             }
             Box(Modifier.size(28.dp).background(P.Background.copy(alpha = .72f), CircleShape), contentAlignment = Alignment.Center) {

@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
             Text("Settings", fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("App updates", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("App updates", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Check for new releases when you open Pipes. Declining an update postpones reminders for five days.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -57,14 +57,14 @@ import androidx.compose.ui.unit.sp
                 })
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Text("Recommendations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Recommendations", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Choose a region for new recommendations, or follow the current song automatically.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         regionPicker()
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
-            Text("About Pipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("About Pipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Version $appVersion", style = MaterialTheme.typography.bodyMedium)
             Text("Your music, in motion.", style = MaterialTheme.typography.bodyLarge)
             Text("Browse record sleeves on Home and in your library. Rotate the player’s vinyl to seek, or use the track buttons to change songs. Public Instagram video downloads, song radio, queues, playlists, and local audio are all here.",
