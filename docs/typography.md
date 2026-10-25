@@ -6,9 +6,10 @@ Source: https://github.com/nicoverbruggen/libron/releases/tag/v0.32
 
 SIL Open Font License and copyright notices ship in `app/src/main/assets/licenses/`.
 
-Oxocarbon reference: https://github.com/nyoom-engineering/oxocarbon.nvim
-Style guidance: https://github.com/nyoom-engineering/oxocarbon/blob/main/docs/style-guide.md
+Canonical colour source: https://github.com/nyoom-engineering/base16-oxocarbon/blob/23497e43ad4553dad4ad1a4d3fb7eb2e5bbbb313/base16-oxocarbon-dark.yaml
 
-Charcoal surfaces establish depth. Blue marks primary and selected controls, cyan marks playback progress and queue addition, and violet marks saved state and queue removal. Artwork supplies the broader colour field. Decorative signal strips and dot/dash navigation are removed.
+The unmodified YAML is vendored at `design/base16-oxocarbon-dark.yaml`. Run `python3 scripts/sync_oxocarbon.py` to generate both Compose tokens and Android colour resources, or add `--check` to detect drift. Every Material colour role is explicitly assigned, including error, inverse, fixed and container roles; Android's window/background and accent use the same generated resources. Surface tint is transparent to preserve the actual neutral surfaces.
 
-The neutral colours match the reference theme's HSLuv blends: background `#161616`, surface `#262626`, raised `#393939`, edge `#525252`, secondary text `#d0d0d0`, and primary text `#f2f2f2`. Shadows use matching silhouettes and shared 2/4/8dp elevations; the floating player lifts to 12dp during a drag. Playback controls live in a common transport surface, with a recessed play/pause housing and a pressed spring response. Search expands over 280ms and receives focus after expansion; page transitions use a short fade and restrained translation. Compose animation primitives follow the system animation duration scale.
+Base04 is `#dde1e6` and Base05 is `#f2f4f8`, exactly as the Base16 source specifies. These differ from the newer Neovim implementation's dynamically blended neutrals. Primary actions and playback use Base08 cyan; secondary controls use Base09 blue, saved hearts use Base0C pink, and queue removal uses Base0E violet. No dynamic wallpaper palette is used. Opacity remains reserved for shadows, scrims and interaction feedback.
+
+Shadows use matching silhouettes and shared 2/4/8dp elevations; the floating player lifts to 12dp during a drag. Playback controls live in a common transport surface, with a recessed play/pause housing and a pressed spring response. Search takes focus after its expansion settles. Compose animation primitives follow the system animation duration scale.

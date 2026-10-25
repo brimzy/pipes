@@ -1159,7 +1159,7 @@ class MainActivity : ComponentActivity() {
                 Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp).clickable(enabled = onArtist != null) { onArtist?.invoke(track.artist) })
             }
             if (active) Icon(Icons.Default.GraphicEq, "Now playing", tint = PipesPalette.Cyan, modifier = Modifier.padding(horizontal = 8.dp).size(20.dp))
-            IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Violet else Muted, modifier = Modifier.size(20.dp)) }
+            IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Muted, modifier = Modifier.size(20.dp)) }
         }
     }
 }
@@ -1784,7 +1784,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
                 IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Violet else Ink) }
+                    if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
             }
             Spacer(Modifier.height(16.dp))
             Column(Modifier.fillMaxWidth().carbonSurface(RoundedCornerShape(24.dp), 4.dp).padding(vertical = 16.dp)) {

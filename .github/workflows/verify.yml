@@ -42,4 +42,6 @@ jobs:
           gradle-version: '8.14.4'
 
       - name: Run unit tests, build, and lint
-        run: gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+        run: |
+          python3 scripts/sync_oxocarbon.py --check
+          gradle :app:testDebugUnitTest :app:assembleDebug :app:lintDebug

@@ -12,45 +12,77 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
+// Source: nyoom-engineering/base16-oxocarbon, base16-oxocarbon-dark.yaml.
 object PipesPalette {
-    val Background = Color(0xFF161616)
-    val Card = Color(0xFF262626)
-    val Raised = Color(0xFF393939)
-    val Line = Color(0xFF525252)
-    val Text = Color(0xFFF2F2F2)
-    val TextSoft = Color(0xFFD0D0D0)
-    val Accent = Color(0xFF78A9FF)
-    val Cyan = Color(0xFF3DDBD9)
-    val Violet = Color(0xFFBE95FF)
-    val Error = Color(0xFFFF7EB6)
+    val Background = Oxocarbon.Base00
+    val Card = Oxocarbon.Base01
+    val Raised = Oxocarbon.Base02
+    val Line = Oxocarbon.Base03
+    val TextSoft = Oxocarbon.Base04
+    val Text = Oxocarbon.Base05
+    val White = Oxocarbon.Base06
+    val Teal = Oxocarbon.Base07
+    val Cyan = Oxocarbon.Base08
+    val Accent = Oxocarbon.Base08
+    val Blue = Oxocarbon.Base09
+    val Error = Oxocarbon.Base0A
+    val Sky = Oxocarbon.Base0B
+    val Favorite = Oxocarbon.Base0C
+    val Success = Oxocarbon.Base0D
+    val Violet = Oxocarbon.Base0E
+    val Ice = Oxocarbon.Base0F
 }
 
+// Explicitly map every Material role: no default Material purple/red containers.
 private val PipesScheme = darkColorScheme(
     primary = PipesPalette.Accent,
     onPrimary = PipesPalette.Background,
-    primaryContainer = PipesPalette.Raised,
-    onPrimaryContainer = PipesPalette.Text,
+    primaryContainer = PipesPalette.Card,
+    onPrimaryContainer = PipesPalette.Accent,
+    inversePrimary = PipesPalette.Teal,
+    secondary = PipesPalette.Blue,
+    onSecondary = PipesPalette.Background,
+    secondaryContainer = PipesPalette.Card,
+    onSecondaryContainer = PipesPalette.Blue,
+    tertiary = PipesPalette.Violet,
+    onTertiary = PipesPalette.Background,
+    tertiaryContainer = PipesPalette.Card,
+    onTertiaryContainer = PipesPalette.Violet,
     background = PipesPalette.Background,
     onBackground = PipesPalette.Text,
     surface = PipesPalette.Card,
+    onSurface = PipesPalette.Text,
     surfaceVariant = PipesPalette.Raised,
+    onSurfaceVariant = PipesPalette.TextSoft,
     surfaceTint = Color.Transparent,
-    surfaceContainerLowest = PipesPalette.Background,
-    surfaceContainerLow = PipesPalette.Card,
+    inverseSurface = PipesPalette.TextSoft,
+    inverseOnSurface = PipesPalette.Background,
+    error = PipesPalette.Error,
+    onError = PipesPalette.Background,
+    errorContainer = PipesPalette.Card,
+    onErrorContainer = PipesPalette.Error,
+    outline = PipesPalette.Line,
+    outlineVariant = PipesPalette.Raised,
+    scrim = PipesPalette.Background,
+    surfaceBright = PipesPalette.Raised,
+    surfaceDim = PipesPalette.Background,
     surfaceContainer = PipesPalette.Card,
     surfaceContainerHigh = PipesPalette.Raised,
     surfaceContainerHighest = PipesPalette.Line,
-    onSurface = PipesPalette.Text,
-    onSurfaceVariant = PipesPalette.TextSoft,
-    secondary = PipesPalette.Cyan,
-    onSecondary = PipesPalette.Background,
-    secondaryContainer = PipesPalette.Raised,
-    onSecondaryContainer = PipesPalette.Text,
-    tertiary = PipesPalette.Violet,
-    error = PipesPalette.Error,
-    onError = PipesPalette.Background,
-    outline = PipesPalette.Line,
-    outlineVariant = PipesPalette.Raised,
+    surfaceContainerLow = PipesPalette.Card,
+    surfaceContainerLowest = PipesPalette.Background,
+    primaryFixed = PipesPalette.Cyan,
+    primaryFixedDim = PipesPalette.Teal,
+    onPrimaryFixed = PipesPalette.Background,
+    onPrimaryFixedVariant = PipesPalette.Background,
+    secondaryFixed = PipesPalette.Ice,
+    secondaryFixedDim = PipesPalette.Blue,
+    onSecondaryFixed = PipesPalette.Background,
+    onSecondaryFixedVariant = PipesPalette.Background,
+    tertiaryFixed = PipesPalette.Violet,
+    tertiaryFixedDim = PipesPalette.Violet,
+    onTertiaryFixed = PipesPalette.Background,
+    onTertiaryFixedVariant = PipesPalette.Background,
 )
 
 val Libron = FontFamily(
