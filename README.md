@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 4.0 — a music player with tactile record shelves, song radio, discovery, and local audio.</strong><br />
-  Black and charcoal surfaces. Cyan accents. Your library, queue, and playback in one place.
+  <strong>Pipes 4.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  Oxocarbon charcoal surfaces. White signals. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -36,9 +36,9 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 ## A look inside
 
 <p align="center">
-  <img src="docs/assets/library.png" alt="Pipes My Library with a compact dark record shelf and separate description card" width="280" />
+  <img src="docs/assets/library.png" alt="Earlier Pipes Library design" width="280" />
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/assets/player.png" alt="Pipes player with a tilted vinyl disc, waveform seeking, radio, and queue controls" width="280" />
+  <img src="docs/assets/player.png" alt="Earlier Pipes player design" width="280" />
 </p>
 
 ## What it does
@@ -53,15 +53,15 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Local audio** | Open files including FLAC and WAV in their original format. |
 | **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
 
-Use a song’s **⋮ → Add to queue** action to queue it without interrupting playback.
+Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song for radio, playlist, like, and queue actions. Screen readers expose the same actions.
 
-## Record shelves & gestures
+## Design & gestures
 
-**My Library** shows saved songs and playlist recordings as compact square sleeves on a charcoal shelf. The heading follows the selected recording, and its description typography settles with a spring wobble after a swipe. Home keeps discovery in a simple track list. Swipe horizontally to browse; scroll vertically through the recording details and the rest of your collection. Browsing never interrupts playback. Each record keeps play, like, queue, radio, and playlist actions close by; downloads and categories remain below the Library shelf.
+Pipes uses an Oxocarbon charcoal palette, restrained white accents, dot-and-dash signals, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
 
-The full player uses a perspective vinyl disc, flattened at rest. Rotate it to preview a relative seek: it lifts under your finger, pauses playback during the gesture, then commits the seek on release and restores the previous playing/paused state. A cancelled gesture does not seek. Track buttons remain available, and the mini-player artwork still supports left/right track swipes. The waveform seek control previews your position locally and seeks once when released, with cached drawing and smoother progress updates.
+Library shows artwork, playlists, likes, and downloads without record simulations. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-The shining Pipes wordmark now shows the installed version, and Settings includes updated feature and privacy details. Recording descriptions use available track metadata; Pipes does not invent album reviews, ratings, release years, or biographies.
+The circular mini-player floats above app content. Drag it anywhere inside the safe area and release to spring toward the nearest side. Tap to open the player, or hold for playback controls. It stays clear of system bars and bottom navigation. Song actions are also available by holding artwork or a song row.
 
 ## Updates & settings
 

@@ -48,16 +48,24 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                     val height = 4.dp.toPx() + 26.dp.toPx() * envelope * (.35f + .65f * sin(i * 1.71f).let { it * it })
                     Offset(x, (size.height - height) / 2) to Offset(x, (size.height + height) / 2)
                 }
-                val radius = 28.dp.toPx()
+                val radius = (20 + 24 * light).dp.toPx()
                 val width = 1.3.dp.toPx()
                 onDrawBehind {
                     val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
                     val cursor = size.width * fraction
+                    if (enabled) {
+                        drawCircle(Brush.radialGradient(listOf(PipesPalette.Text.copy(alpha = .12f + .18f * light), Color.Transparent),
+                            center = Offset(cursor, size.height / 2), radius = radius), radius, Offset(cursor, size.height / 2))
+                    }
                     for ((start, end) in bars) {
                         val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
                         val base = if (start.x <= cursor) PipesPalette.Accent else PipesPalette.Text.copy(alpha = .22f)
                         val color = androidx.compose.ui.graphics.lerp(base, Color(0xFFDEFFFF), glow)
-                        drawLine(if (enabled) color else PipesPalette.Line, start, end, width, StrokeCap.Round)
+                        val grow = 1f + glow * .45f
+                        val middle = size.height / 2
+                        drawLine(if (enabled) color else PipesPalette.Line,
+                            Offset(start.x, middle + (start.y - middle) * grow),
+                            Offset(end.x, middle + (end.y - middle) * grow), width + glow * 1.dp.toPx(), StrokeCap.Round)
                     }
                 }
             })

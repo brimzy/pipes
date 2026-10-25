@@ -254,7 +254,7 @@ class PlaybackService : MediaSessionService() {
                     player.getMediaItemAt(it).mediaMetadata.extras?.getString("pipes_page_url")
                 }.toSet()
                 val radioCandidates = if (playlistQueue) emptyList() else withContext(Dispatchers.IO) {
-                    source.relatedSongs(seed, getSharedPreferences("pipes", MODE_PRIVATE).getString("recommendation_region", "AUTO") ?: "AUTO").filterNot { it.pageUrl in existingUrls }
+                    com.nazcarbon.music.data.MusicRecommendations.radio(seed, source.relatedSongs(seed, getSharedPreferences("pipes", MODE_PRIVATE).getString("recommendation_region", "AUTO") ?: "AUTO").filterNot { it.pageUrl in existingUrls })
                 }
                 val candidates = ArrayDeque(radioCandidates)
                 var examined = 0

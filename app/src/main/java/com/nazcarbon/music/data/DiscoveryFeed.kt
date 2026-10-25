@@ -9,6 +9,14 @@ class DiscoveryFeed(private val source: NewPipeMusicSource) {
     fun snapshot(): List<MusicTrack> = seen
 
     @Synchronized
+    fun refresh(current: MusicTrack?, artists: List<String>): List<MusicTrack> {
+        current?.let { visitedSeeds.remove(it.pageUrl) }
+        val batch = next(current, artists)
+        seen = (batch + seen).distinctBy { it.id }.take(240)
+        return batch
+    }
+
+    @Synchronized
     fun next(current: MusicTrack?, artists: List<String>): List<MusicTrack> {
         repeat(3) {
             val seed = (listOfNotNull(current) + seen.asReversed()).firstOrNull {

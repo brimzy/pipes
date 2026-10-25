@@ -6,13 +6,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 object PipesPalette {
-    val Background = Color(0xFF000000)
-    val Card = Color(0xFF090909)
-    val Raised = Color(0xFF111111)
-    val Line = Color(0xFF262626)
+    val Background = Color(0xFF161616)
+    val Card = Color(0xFF1C1C1C)
+    val Raised = Color(0xFF262626)
+    val Line = Color(0xFF393939)
     val Text = Color(0xFFF2F4F8)
-    val TextSoft = Color(0xFFDDE1E6)
-    val Accent = Color(0xFF04D1F9)
+    val TextSoft = Color(0xFFADB5BD)
+    val Accent = Color(0xFFF2F4F8)
 }
 
 private val PipesScheme = darkColorScheme(

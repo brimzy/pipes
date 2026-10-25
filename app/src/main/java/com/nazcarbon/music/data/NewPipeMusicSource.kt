@@ -509,7 +509,7 @@ class NewPipeMusicSource {
         val context = JSONObject().put("client", client)
         val response = youtubeMusicRequest("next", JSONObject().put("videoId", videoId)
             .put("playlistId", "RDAMVM$videoId").put("isAudioOnly", true), context)
-        return MusicRecommendations.radio(seed, parseMusicRadio(response))
+        return parseMusicRadio(response).filter { it.id != seed.id && it.pageUrl != seed.pageUrl && MusicRecommendations.isMusic(it) }.distinctBy { it.pageUrl }
             .also { require(it.isNotEmpty()) { "No related music was returned. Try radio again in a moment." } }
     }
 

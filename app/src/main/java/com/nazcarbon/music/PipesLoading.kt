@@ -1,39 +1,26 @@
 package com.nazcarbon.music
 
-import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Movie
-import android.os.SystemClock
-import android.view.View
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import com.nazcarbon.music.ui.theme.PipesPalette
+import kotlin.math.abs
 
 @Composable
 fun PipesLoading(modifier: Modifier = Modifier) {
-    AndroidView(factory = { LoadingGif(it) }, modifier = modifier.size(64.dp))
-}
-
-@Suppress("DEPRECATION")
-private class LoadingGif(context: Context) : View(context) {
-    private val movie = context.assets.open("loading.gif").use { Movie.decodeStream(it) }
-    private var started = SystemClock.uptimeMillis()
-    init {
-        contentDescription = "Loading music"
-        setLayerType(LAYER_TYPE_SOFTWARE, null)
-    }
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val animation = movie ?: return
-        animation.setTime(((SystemClock.uptimeMillis() - started) % (animation.duration().takeIf { it > 0 } ?: 1000)).toInt())
-        val scale = minOf(width.toFloat() / animation.width(), height.toFloat() / animation.height())
-        canvas.save()
-        canvas.translate((width - animation.width() * scale) / 2, (height - animation.height() * scale) / 2)
-        canvas.scale(scale, scale)
-        animation.draw(canvas, 0f, 0f)
-        canvas.restore()
-        if (isShown) postInvalidateOnAnimation()
+    val phase by rememberInfiniteTransition(label = "loading signal").animateFloat(0f, 4f,
+        infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "loading phase")
+    Canvas(modifier.size(48.dp).semantics { contentDescription = "Loading music" }) {
+        for (i in 0..3) {
+            val strength = (1f - abs(i - phase) / 2).coerceIn(0f, 1f)
+            drawCircle(PipesPalette.Text.copy(alpha = .2f + .8f * strength),
+                size.minDimension * (.035f + .025f * strength), Offset(size.width * (.2f + i * .2f), size.height / 2))
+        }
     }
 }

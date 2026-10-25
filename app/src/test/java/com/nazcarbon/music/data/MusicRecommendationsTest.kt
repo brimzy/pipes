@@ -33,6 +33,15 @@ class MusicRecommendationsTest {
         assertNotEquals(a.map { it.id }, b.map { it.id })
     }
 
+    @Test fun `radio starts within the relevant source window across random seeds`() {
+        val candidates = (0..29).map { song("id$it", "Song $it", "Artist $it") }
+        repeat(100) { seed ->
+            val radio = MusicRecommendations.radio(song("seed", "Seed", "Origin"), candidates, Random(seed))
+            assertTrue(radio.first() in candidates.take(5))
+            assertEquals(candidates.size, radio.size)
+        }
+    }
+
     @Test fun `radio avoids consecutive artists when alternatives exist`() {
         val seed = song("seed", "Seed", "Artist A")
         val candidates = (0..9).map { song("a$it", "A $it", "Artist A") } +
