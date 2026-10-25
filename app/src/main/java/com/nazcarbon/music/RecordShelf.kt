@@ -37,7 +37,7 @@ import com.nazcarbon.music.ui.theme.PipesPalette
     val latestNext by rememberUpdatedState(next)
     val latestHasNext by rememberUpdatedState(hasNext)
     Box(modifier.graphicsLayer { translationX = offset.value * .4f; rotationZ = offset.value / threshold * .8f }
-        .carbonSurface(RoundedCornerShape(16.dp), 8.dp)
+        .artworkSurface(RoundedCornerShape(12.dp), 4.dp)
         .pointerInput(track.id, threshold) {
             detectHorizontalDragGestures(onDragStart = { dragging = true; drag = 0f },
                 onDragCancel = { dragging = false; drag = 0f }, onDragEnd = {

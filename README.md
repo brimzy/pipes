@@ -48,6 +48,7 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | Feature | How it works |
 | :--- | :--- |
 | **Android Auto** | Browse saved likes, playlists, completed downloads, and search your saved library from a compatible car host. |
+| **Explore** | Browse moods and genres with playable artwork previews, session caching, refresh and retry. |
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
@@ -62,9 +63,9 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 Pipes uses a true black canvas and Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
 
-A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Spring feedback makes selection and presses responsive.
+A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its matte surface has no decorative outline. Spring feedback makes selection and presses responsive.
 
-Library shows artwork, playlists, likes, and downloads without record simulations. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
+Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
 The circular mini-player floats above app content. Drag it anywhere inside the safe area and release to spring toward the nearest side. Tap to open the player, or hold for playback controls. It stays clear of system bars and bottom navigation. Song actions are also available by holding artwork or a song row.
 

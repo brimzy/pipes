@@ -132,7 +132,7 @@ private val Muted = PipesPalette.TextSoft
 
 internal val LocalRemoveFromQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
 
-private val LocalAddToQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
+internal val LocalAddToQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
 
 private const val RADIO_METADATA_KEY = "pipes_radio"
 private const val AUTO_QUEUE_METADATA_KEY = "pipes_auto_queue"
@@ -192,6 +192,9 @@ class MainActivity : ComponentActivity() {
                 AppUpdateDialog(this@MainActivity, updates)
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
                 val discoveryFeed = remember { com.nazcarbon.music.data.DiscoveryFeed(source) }
+                val exploreFeed = remember { com.nazcarbon.music.data.ExploreFeed(source::searchSongs) }
+                var exploreSelection by remember { mutableStateOf("After hours") }
+                val exploreScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 val discoveryScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 var page by remember { mutableStateOf("Home") }
                 var query by remember { mutableStateOf("") }
@@ -929,9 +932,9 @@ class MainActivity : ComponentActivity() {
                                         ::startRadio,
                                         ::choosePlaylist,
                                         { removePlaylist(playlist) },
-                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, { }, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
+                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
-                                "Explore" -> Explore(::search)
+                                "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
                                 else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
                             }
                             }
@@ -1042,60 +1045,13 @@ class MainActivity : ComponentActivity() {
             placeholder = { Text("Songs, artists, albums", color = Muted, fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Ink) },
             shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Raised, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
+            colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Color.Transparent, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
         )
         }
         }
 
     }
 }
-
-@Composable private fun Home(onSearch: (String) -> Unit, likedArtists: List<String>, playlists: List<MusicPlaylist>, current: MusicTrack?, onRadio: (String) -> Unit) {
-    LazyColumn(contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 22.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
-        item {
-            Spacer(Modifier.height(6.dp))
-            Text("Room for your music.", color = Ink, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Text("A little quieter. A little more you.", color = Muted, fontSize = 13.sp)
-            Spacer(Modifier.height(22.dp))
-            Box(Modifier.fillMaxWidth().heightIn(min = 184.dp).clip(RoundedCornerShape(24.dp)).background(Panel).border(1.dp, Raised, RoundedCornerShape(24.dp)).clickable { onSearch("indie pop") }) {
-                Column(Modifier.padding(24.dp).padding(end = 40.dp)) {
-                    Text("PIPES RADIO · 001", color = Ink, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp)
-                    Spacer(Modifier.height(10.dp))
-                    Text("Your soft\nlanding.", color = Ink, fontSize = 29.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Dreamy indie for wherever you're headed.", color = Muted, fontSize = 11.sp)
-                }
-                Box(Modifier.align(Alignment.TopEnd).padding(16.dp).size(36.dp), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Default.MusicNote, null, tint = Ink, modifier = Modifier.size(30.dp))
-                }
-            }
-        }
-        if (current != null) item {
-            Text("Keep the vibe going", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 10.dp)) {
-                items((listOf(current) + playlists.flatMap { it.tracks }).distinctBy { it.id }.take(12), key = { "home:${it.id}" }) { track ->
-                    Column(Modifier.width(140.dp).clickable { onSearch("${track.artist} ${track.title}") }) {
-                        ArtworkImage(track.thumbnailUrl, null, Modifier.size(140.dp).clip(RoundedCornerShape(16.dp)).background(Raised), contentScale = ContentScale.Crop)
-                        Text(track.title, color = PipesPalette.SongTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
-                        Text(track.artist, color = Muted, fontSize = 12.sp, maxLines = 1)
-                    }
-                }
-            }
-            TextButton(onClick = { onRadio(if (likedArtists.isNotEmpty()) "${likedArtists.take(3).joinToString(" ")} similar music" else "indie pop radio") }) {
-                Icon(Icons.Default.Radio, null, tint = Ink); Spacer(Modifier.width(8.dp)); Text("Start a radio for your taste", color = Ink)
-            }
-        }
-        item { Text("Find your frequency", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold) }
-        items(listOf("indie pop", "late night r&b", "dream pop", "ambient focus", "new music")) { mood ->
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Panel).clickable { onSearch(mood) }.padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(38.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) { Icon(Icons.Default.MusicNote, null, tint = Ink) }
-                Spacer(Modifier.width(16.dp)); Text(mood.replaceFirstChar { it.uppercase() }, color = Ink, fontWeight = FontWeight.Normal); Spacer(Modifier.weight(1f)); Text("↗", color = Muted)
-            }
-        }
-    }
-}
-
 
 @Composable private fun SearchHistoryPanel(history: List<String>, onSearch: (String) -> Unit, onRemove: (String) -> Unit, onClear: () -> Unit) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -1104,7 +1060,7 @@ class MainActivity : ComponentActivity() {
             Text("Recent searches", color = PipesPalette.Heading, fontSize = 24.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             if (history.isNotEmpty()) TextButton(onClick = { confirmClear = true }) { Text("Clear all") }
         }
-        if (history.isEmpty()) Text("Find your next favorite. Your searches will appear here.", color = Muted, modifier = Modifier.padding(20.dp))
+        if (history.isEmpty()) Text("Find your next favorite. Your searches will appear here.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
         LazyColumn {
             items(history, key = { it }) { query ->
                 Row(Modifier.fillMaxWidth().clickable { onSearch(query) }.padding(start = 24.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1137,7 +1093,7 @@ class MainActivity : ComponentActivity() {
                 PipesLoading()
                 loadingMessage?.let { Text(it, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp)) }
             }
-            error != null -> Column(Modifier.padding(20.dp)) {
+            error != null -> Column(Modifier.padding(PipesSpace.Page)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry search") }
             }
@@ -1155,7 +1111,7 @@ class MainActivity : ComponentActivity() {
     QueueGesture(track, { onPlay(track) }, { add(track) }, onRemove ?: { remove(track) },
         { onLike(track) }, { onRadio(track) }, { onSave(track) }, onSpotify?.let { { it(track) } }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).carbonSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
+            ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).artworkSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(track.title, color = if (active) PipesPalette.Cyan else PipesPalette.SongTitle, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
@@ -1192,61 +1148,44 @@ class MainActivity : ComponentActivity() {
     LaunchedEffect(categories) {
         if (selectedCategory !in categories) selectedCategory = "All"
     }
-    val collection = (tracks + playlists.flatMap { it.tracks }).distinctBy { it.id }
     val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
     Column(Modifier.fillMaxSize()) {
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 18.dp)) {
-            item(key = "library-records") {
-                Column(Modifier.padding(24.dp)) {
-                    Text("Your library.", color = PipesPalette.Heading, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                    Text("${collection.size} recordings  /  ${playlists.size} playlists", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                    Text("Swipe right to queue · left to remove · hold for actions", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 16.dp))
-                }
-                if (collection.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    collection.take(2).forEach { track ->
-                        val add = LocalAddToQueue.current
-                        val remove = LocalRemoveFromQueue.current
-                        Box(Modifier.weight(1f)) {
-                            QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
-                                Column {
-                                    ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
-                                    Text(track.title, color = PipesPalette.SongTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
-                                    Text(track.artist, color = Muted, maxLines = 1, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-                                }
-                            }
-                        }
+        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = PipesSpace.Page)) {
+            item(key = "library-header") {
+                Column(Modifier.padding(PipesSpace.Page)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Your library.", color = PipesPalette.Heading, fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
                     }
-                    if (collection.size == 1) Spacer(Modifier.weight(1f))
+                    Text("${tracks.size} liked songs · ${playlists.size} playlists", color = Muted,
+                        fontSize = 12.sp, modifier = Modifier.padding(top = PipesSpace.ArtworkText))
                 }
             }
             item(key = "library-tools") {
                 Column {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("YOUR COLLECTION", color = Muted, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
-                    }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
+                        FilledTonalButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Panel, contentColor = Ink)) {
                             Icon(Icons.Default.MusicNote, null)
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Download", maxLines = 1)
                         }
-                        OutlinedButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.outlinedButtonColors(contentColor = Ink)) {
+                        FilledTonalButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Panel, contentColor = Ink)) {
                             Icon(Icons.Default.FolderOpen, null)
-                            Spacer(Modifier.width(6.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text("Categories", maxLines = 1)
                         }
                     }
                     Text(
-                        "Download audio or public Instagram videos you own or have permission to save.",
+                        "Save audio and organize it into categories.",
                         color = Muted,
                         fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 2.dp),
+                        modifier = Modifier.padding(horizontal = PipesSpace.Page, vertical = PipesSpace.ArtworkText),
                     )
                 }
             }
             item {
-                Text("DOWNLOADS · ${downloads.size}", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("DOWNLOADS · ${downloads.size}", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
             }
             if (categories.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1255,6 +1194,7 @@ class MainActivity : ComponentActivity() {
                             selected = selectedCategory == category,
                             onClick = { selectedCategory = category },
                             label = { Text(category) },
+                            border = null,
                         )
                     }
                 }
@@ -1270,7 +1210,7 @@ class MainActivity : ComponentActivity() {
                 DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
             }
             item {
-                Text("PLAYLISTS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("PLAYLISTS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
             }
             if (playlists.isEmpty()) item {
                 Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1279,7 +1219,7 @@ class MainActivity : ComponentActivity() {
                     Modifier.fillMaxWidth().clickable { onOpenPlaylist(playlist) }.padding(horizontal = 24.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(9.dp)).background(Raised), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(Raised), contentAlignment = Alignment.Center) {
                         Icon(Icons.Default.QueueMusic, null, tint = Ink)
                     }
                     Spacer(Modifier.width(16.dp))
@@ -1291,7 +1231,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Text("LIKED SONGS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("LIKED SONGS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
             }
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1442,7 +1382,7 @@ class MainActivity : ComponentActivity() {
                 fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         }
         if (playlist.tracks.isEmpty()) {
-            Text("Use a song's menu to add it to this playlist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(20.dp))
+            Text("Use a song's menu to add it to this playlist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(PipesSpace.Page))
         } else LazyColumn {
             items(playlist.tracks, key = { it.id }) {
                 TrackRow(it, current?.id == it.id && playing, false, onPlay, {}, onRadio, onSave)
@@ -1481,7 +1421,7 @@ class MainActivity : ComponentActivity() {
         RecommendationRegionPicker()
         if (following.isEmpty()) {
             if (radioLoading) PipesLoading(modifier = Modifier.padding(24.dp))
-            else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(20.dp))
+            else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
         } else LazyColumn {
             items(following.size) { offset ->
                 val track = following[offset]
@@ -1504,19 +1444,19 @@ class MainActivity : ComponentActivity() {
         Text("Discography search · $query", color = Muted, modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
         when {
             loading -> PipesLoading(modifier = Modifier.align(Alignment.CenterHorizontally).padding(32.dp))
-            error != null -> Column(Modifier.padding(20.dp)) {
+            error != null -> Column(Modifier.padding(PipesSpace.Page)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry") }
             }
-            artists.isEmpty() -> Text("No artist pages found. Try the artist's full name.", color = Muted, modifier = Modifier.padding(20.dp))
+            artists.isEmpty() -> Text("No artist pages found. Try the artist's full name.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
             else -> LazyColumn(contentPadding = PaddingValues(vertical = 8.dp, horizontal = 16.dp)) {
                 items(artists, key = { it.url }) { artist ->
                     Row(
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { onOpenArtist(artist) }.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ArtworkImage(artist.thumbnailUrl, null, Modifier.size(58.dp).clip(CircleShape).background(Raised), contentScale = ContentScale.Crop)
-                        Spacer(Modifier.width(14.dp))
+                        ArtworkImage(artist.thumbnailUrl, null, Modifier.size(56.dp).artworkSurface(CircleShape, 2.dp), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
                             Text(artist.name, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text("Open albums, singles & radio", color = Muted, fontSize = 12.sp)
@@ -1555,25 +1495,25 @@ class MainActivity : ComponentActivity() {
         if (discography != null) {
             item(key = "artist-header") {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 18.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ArtworkImage(
                         discography.artist.thumbnailUrl, null,
-                        Modifier.size(76.dp).clip(CircleShape).background(Raised),
+                        Modifier.size(80.dp).artworkSurface(CircleShape, 2.dp),
                         contentScale = ContentScale.Crop,
                     )
-                    Spacer(Modifier.width(14.dp))
+                    Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(discography.artist.name, color = PipesPalette.Heading, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("Artist discography", color = Muted, fontSize = 13.sp)
                     }
-                    Spacer(Modifier.width(10.dp))
-                    ArtistArtwork(releases.firstOrNull()?.thumbnailUrl.orEmpty(), Modifier.size(78.dp))
+                    Spacer(Modifier.width(12.dp))
+                    ArtistArtwork(releases.firstOrNull()?.thumbnailUrl.orEmpty(), Modifier.size(80.dp))
                 }
             }
             item(key = "artist-radio") {
-                TextButton(onClick = onRadio, modifier = Modifier.padding(start = 10.dp)) {
+                TextButton(onClick = onRadio, modifier = Modifier.padding(start = 12.dp)) {
                     Icon(Icons.Default.Radio, null, tint = Ink)
                     Spacer(Modifier.width(8.dp))
                     Text("Artist radio", color = Ink)
@@ -1587,8 +1527,8 @@ class MainActivity : ComponentActivity() {
         }
         when {
             loading -> item(key = "artist-loading") { PipesLoading(modifier = Modifier.fillMaxWidth().wrapContentWidth().padding(28.dp)) }
-            error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(20.dp)) }
-            discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(20.dp)) }
+            error != null -> item(key = "artist-error") { Text(error, color = Muted, modifier = Modifier.padding(PipesSpace.Page)) }
+            discography == null || releases.isEmpty() -> item(key = "artist-empty") { Text("No albums or singles were found for this artist.", color = Muted, modifier = Modifier.padding(PipesSpace.Page)) }
             else -> {
                 item(key = "release-tabs") {
                     Row(
@@ -1633,7 +1573,7 @@ class MainActivity : ComponentActivity() {
                     item(key = if (showingSingles) "singles-carousel" else "albums-carousel") {
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(if (showingSingles) 14.dp else 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(PipesSpace.Gap),
                         ) {
                             itemsIndexed(selectedReleases, key = { _, release -> "${if (showingSingles) "single" else "album"}:${release.url}" }) { index, release ->
                                 ArtistReleaseCard(release, index, isSingle = showingSingles, onOpen = onOpenRelease)
@@ -1642,7 +1582,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 item(key = "chronology-title") {
-                    Text("Chronological discography · newest first", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 18.dp, bottom = 6.dp))
+                    Text("Chronological discography · newest first", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 8.dp))
                 }
                 items(chronologicalReleases, key = { "list:${it.url}" }) { release -> ArtistReleaseRow(release, onOpenRelease) }
             }
@@ -1654,12 +1594,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     release.kind.contains("single", true) || release.kind.contains("ep", true) || release.trackCount == 1L
 
 @Composable private fun ArtistArtwork(imageUrl: String, modifier: Modifier = Modifier) {
-    ArtworkImage(imageUrl, null, modifier.carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
+    ArtworkImage(imageUrl, null, modifier.artworkSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
 }
 
 @Composable private fun ArtistReleaseCard(release: ArtistRelease, index: Int, isSingle: Boolean, onOpen: (ArtistRelease) -> Unit) {
     Column(Modifier.width(if (isSingle) 176.dp else 224.dp).clickable { onOpen(release) }.padding(bottom = 16.dp)) {
-        ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
+        ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).artworkSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
         Text("${(index + 1).toString().padStart(2, '0')}  /  ${release.kind.uppercase()}", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 16.dp))
         Text(release.title, color = PipesPalette.SongTitle, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         Text(listOfNotNull(release.year?.toString(), release.trackCount.takeIf { it > 0 }?.let { "$it tracks" }).joinToString(" · "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
@@ -1671,7 +1611,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         Modifier.fillMaxWidth().clickable { onOpen(release) }.padding(horizontal = 24.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ArtworkImage(release.thumbnailUrl, null, Modifier.size(60.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentScale = ContentScale.Crop)
+        ArtworkImage(release.thumbnailUrl, null, Modifier.size(56.dp).artworkSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(release.title, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1696,8 +1636,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            ArtworkImage(release.thumbnailUrl, null, Modifier.size(72.dp).clip(RoundedCornerShape(12.dp)).background(Raised), contentScale = ContentScale.Crop)
-            Spacer(Modifier.width(14.dp))
+            ArtworkImage(release.thumbnailUrl, null, Modifier.size(72.dp).artworkSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
+            Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(release.title, color = PipesPalette.SongTitle, fontSize = 20.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text("$artistName · ${release.kind}", color = Muted, fontSize = 12.sp)
@@ -1710,24 +1650,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         }
         when {
             loading -> PipesLoading(modifier = Modifier.align(Alignment.CenterHorizontally).padding(28.dp))
-            error != null -> Text(error, color = Muted, modifier = Modifier.padding(20.dp))
-            tracks.isEmpty() -> Text("No tracks were found on this release.", color = Muted, modifier = Modifier.padding(20.dp))
+            error != null -> Text(error, color = Muted, modifier = Modifier.padding(PipesSpace.Page))
+            tracks.isEmpty() -> Text("No tracks were found on this release.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
             else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
                 items(tracks, key = { it.id }) { track ->
                     TrackRow(track, false, false, onPlayTrack, {}, { onRadio() }, onAddTrack)
                 }
-            }
-        }
-    }
-}
-
-@Composable private fun Explore(onSearch: (String) -> Unit) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp)) {
-        Text("Explore", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        Text("Go where the music takes you.", color = Muted, modifier = Modifier.padding(top = 5.dp, bottom = 20.dp))
-        listOf("Indie essentials", "R&B after dark", "Electronic", "Quiet focus", "New & trending").forEachIndexed { index, label ->
-            Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Raised).clickable { onSearch(listOf("indie pop", "r&b", "electronic music", "ambient focus", "new music")[index]) }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(listOf("♫", "◉", "▣", "☷", "✳")[index], color = Ink, fontSize = 20.sp); Spacer(Modifier.width(14.dp)); Text(label, color = Ink, fontWeight = FontWeight.Bold); Spacer(Modifier.weight(1f)); Text("→", color = Muted)
             }
         }
     }
@@ -1812,10 +1740,10 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = PipesPalette.Line.copy(alpha = .5f))
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
-                    Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Radio")
+                    Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
                 }
                 TextButton(onClick = onQueue) {
-                    Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Queue · $queueCount")
+                    Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
                 }
             }
             }
@@ -1828,7 +1756,6 @@ private fun playbackTime(milliseconds: Long): String {
     val seconds = milliseconds.coerceAtLeast(0) / 1000
     return "%d:%02d".format(seconds / 60, seconds % 60)
 }
-
 
 @Composable
 private fun DiscoveryHome(
@@ -1897,7 +1824,7 @@ private fun DiscoveryHome(
             val remove = LocalRemoveFromQueue.current
             QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                 Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).fillMaxWidth().aspectRatio(1.05f)
-                    .carbonSurface(RoundedCornerShape(12.dp), 8.dp)) {
+                    .artworkSurface(RoundedCornerShape(12.dp), 4.dp)) {
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Carbon.copy(alpha = .96f)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
@@ -1909,25 +1836,16 @@ private fun DiscoveryHome(
             }
         }
         items(tracks.drop(1).chunked(2), key = { "discovery-pair:${it.first().id}" }) { pair ->
-            Row(Modifier.padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(Modifier.padding(horizontal = PipesSpace.Page).padding(bottom = PipesSpace.Page),
+                horizontalArrangement = Arrangement.spacedBy(PipesSpace.Gap)) {
                 pair.forEach { track ->
-                    val add = LocalAddToQueue.current
-                    val remove = LocalRemoveFromQueue.current
-                    Box(Modifier.weight(1f)) {
-                        QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
-                            Column {
-                                ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
-                                Text(track.title, color = PipesPalette.SongTitle, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
-                                Text(track.artist, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
-                            }
-                        }
-                    }
+                    Box(Modifier.weight(1f)) { MusicArtworkCard(track, onPlay, onLike, onRadio, onSave) }
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
         }
         item(key = "discovery-footer") {
-            Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxWidth().padding(PipesSpace.Page), contentAlignment = Alignment.Center) {
                 when {
                     loading -> PipesLoading(Modifier.size(36.dp))
                     error != null -> TextButton(onClick = { loadMore() }) { Text(error!!, color = Accent) }

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -69,11 +70,11 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
     val markerAlpha by animateFloatAsState(if (selected >= 0) 1f else 0f, label = "dock marker visibility")
     val shape = RoundedCornerShape(20.dp)
 
-    Box(Modifier.fillMaxWidth().background(P.Background).padding(horizontal = 20.dp, vertical = 12.dp),
+    Box(Modifier.fillMaxWidth().background(P.Background).padding(horizontal = PipesSpace.Page, vertical = 12.dp),
         contentAlignment = Alignment.Center) {
         Row(Modifier.widthIn(max = 420.dp).fillMaxWidth()
-            .background(P.Dock, shape)
-            .border(1.dp, P.Raised, shape).clip(shape)
+            .shadow(4.dp, shape, ambientColor = Color.Black.copy(alpha = .12f), spotColor = Color.Black.copy(alpha = .24f))
+            .background(P.Dock, shape).clip(shape)
             .padding(horizontal = 8.dp)
             .drawBehind {
                 val widths = weights.map { it.value }

@@ -108,7 +108,7 @@ import kotlin.math.roundToInt
                     dragging = false; x = if (x < limitX / 2) 0f else limitX
                 }) { change, delta -> change.consume(); x = (x + delta.x).coerceIn(0f, limitX); y = (y + delta.y).coerceIn(0f, limitY) }
             }.combinedClickable(onClick = expand, onLongClick = { controls = true }), contentAlignment = Alignment.Center) {
-            ArtworkImage(track.thumbnailUrl, null, Modifier.size(68.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+            ArtworkImage(track.thumbnailUrl, null, Modifier.size(68.dp).artworkSurface(CircleShape, 2.dp), contentScale = ContentScale.Crop)
             Canvas(Modifier.fillMaxSize().padding(3.dp)) {
                 drawArc(P.Text.copy(alpha = .16f), -90f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
                 drawArc(P.Cyan, -90f, if (duration > 0) 360f * (position.toFloat() / duration).coerceIn(0f, 1f) else 0f, false,
