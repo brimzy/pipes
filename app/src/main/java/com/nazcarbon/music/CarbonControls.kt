@@ -1,6 +1,14 @@
 package com.nazcarbon.music
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.hoverable
@@ -73,17 +81,48 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
 }
 
 @Composable
-internal fun CarbonPlayButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+internal fun CarbonPlayButton(playing: Boolean, buffering: Boolean, onClick: () -> Unit) {
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val pressed by interactions.collectIsPressedAsState()
-    val shade by animateFloatAsState(if (pressed) .8f else if (hovered) .9f else 1f, label = "button shade")
-    FilledIconButton(onClick = onClick, interactionSource = interactions,
-        colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color.Transparent, contentColor = PipesPalette.Background),
-        modifier = Modifier.size(64.dp).hoverable(interactions)
-            .shadow(if (pressed) 3.dp else 10.dp, CircleShape, ambientColor = Color.Black, spotColor = Color.Black)
-            .background(PipesPalette.Accent.copy(alpha = shade), CircleShape),
-        content = content)
+    val compression = animateFloatAsState(if (pressed) .94f else 1f,
+        spring(dampingRatio = .85f, stiffness = 650f), label = "transport press")
+    val morph = animateFloatAsState(if (playing) 1f else 0f, tween(220), label = "play pause morph")
+    val edge by animateColorAsState(if (playing || hovered) PipesPalette.Accent.copy(alpha = .55f) else PipesPalette.Line,
+        tween(220), label = "transport edge")
+    IconButton(onClick = onClick, interactionSource = interactions,
+        modifier = Modifier.size(80.dp).hoverable(interactions)
+            .semantics { contentDescription = if (playing) "Pause" else "Play" }) {
+        Box(Modifier.fillMaxSize().carbonSurface(CircleShape, 4.dp, PipesPalette.Card, edge), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(60.dp).graphicsLayer {
+                scaleX = compression.value; scaleY = compression.value
+                translationY = (1f - compression.value) * 24.dp.toPx()
+            }.carbonSurface(CircleShape, if (pressed) 2.dp else 4.dp, PipesPalette.Raised,
+                PipesPalette.Text.copy(alpha = if (pressed) .05f else .1f)), contentAlignment = Alignment.Center) {
+                Crossfade(targetState = buffering, animationSpec = tween(160), label = "transport buffering") { busy ->
+                    if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = PipesPalette.Cyan, strokeWidth = 2.dp)
+                    else Canvas(Modifier.size(36.dp)) {
+                        val t = morph.value
+                        fun mix(a: Float, b: Float) = (a + (b - a) * t) * size.width / 36f
+                        fun polygon(play: List<Offset>, pause: List<Offset>) {
+                            val path = Path()
+                            play.indices.forEach { i ->
+                                val x = mix(play[i].x, pause[i].x)
+                                val y = mix(play[i].y, pause[i].y)
+                                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                            }
+                            path.close()
+                            drawPath(path, PipesPalette.Accent)
+                        }
+                        polygon(listOf(Offset(10f, 6f), Offset(20f, 12f), Offset(20f, 24f), Offset(10f, 30f)),
+                            listOf(Offset(10f, 8f), Offset(15f, 8f), Offset(15f, 28f), Offset(10f, 28f)))
+                        polygon(listOf(Offset(20f, 12f), Offset(30f, 18f), Offset(30f, 18f), Offset(20f, 24f)),
+                            listOf(Offset(21f, 8f), Offset(26f, 8f), Offset(26f, 28f), Offset(21f, 28f)))
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

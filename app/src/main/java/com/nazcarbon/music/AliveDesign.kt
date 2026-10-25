@@ -38,9 +38,10 @@ import kotlin.math.roundToInt
     var drag by remember(track.id) { mutableFloatStateOf(0f) }
     var actions by remember(track.id) { mutableStateOf(false) }
     var armed by remember { mutableStateOf(false) }
+    var dragging by remember(track.id) { mutableStateOf(false) }
     val threshold = with(LocalDensity.current) { 88.dp.toPx() }
     val haptic = LocalHapticFeedback.current
-    val offset by animateFloatAsState(drag, spring(dampingRatio = .72f), label = "queue swipe")
+    val offset by animateFloatAsState(drag, if (dragging) snap() else spring(dampingRatio = .88f, stiffness = 420f), label = "queue swipe")
     val add by rememberUpdatedState(onAdd)
     val remove by rememberUpdatedState(onRemove)
     Box(Modifier.fillMaxWidth()) {
@@ -56,9 +57,9 @@ import kotlin.math.roundToInt
                     CustomAccessibilityAction("Song actions") { actions = true; true })
             }
             .pointerInput(track.id, threshold) {
-                detectHorizontalDragGestures(onDragCancel = { drag = 0f; armed = false }, onDragEnd = {
+                detectHorizontalDragGestures(onDragStart = { dragging = true }, onDragCancel = { dragging = false; drag = 0f; armed = false }, onDragEnd = {
                     if (drag >= threshold) add() else if (drag <= -threshold) remove()
-                    drag = 0f; armed = false
+                    dragging = false; drag = 0f; armed = false
                 }) { change, delta ->
                     change.consume()
                     drag = (drag + delta).coerceIn(-threshold * 1.8f, threshold * 1.8f)
@@ -94,12 +95,11 @@ import kotlin.math.roundToInt
         var x by remember { mutableFloatStateOf(Float.NaN) }
         var y by remember { mutableFloatStateOf(Float.NaN) }
         var dragging by remember { mutableStateOf(false) }
-        val px by animateFloatAsState((if (x.isNaN()) limitX else x).coerceIn(0f, limitX), if (dragging) snap() else spring(.58f, 350f), label = "orb x")
-        val py by animateFloatAsState((if (y.isNaN()) limitY else y).coerceIn(0f, limitY), if (dragging) snap() else spring(.58f, 350f), label = "orb y")
+        val px by animateFloatAsState((if (x.isNaN()) limitX else x).coerceIn(0f, limitX), if (dragging) snap() else spring(.86f, 380f), label = "orb x")
+        val py by animateFloatAsState((if (y.isNaN()) limitY else y).coerceIn(0f, limitY), if (dragging) snap() else spring(.86f, 380f), label = "orb y")
         var controls by remember { mutableStateOf(false) }
         Box(Modifier.offset { IntOffset(px.roundToInt(), py.roundToInt()) }.size(80.dp)
-            .shadow(if (dragging) 24.dp else 16.dp, CircleShape).clip(CircleShape)
-            .background(P.Raised).border(1.dp, P.Line, CircleShape)
+            .carbonSurface(CircleShape, if (dragging) 12.dp else 8.dp, P.Card)
             .semantics { contentDescription = "${track.title}, ${if (playing) "playing" else "paused"}. Tap to open player. Hold for controls. Drag to move."
                 customActions = listOf(CustomAccessibilityAction(if (playing) "Pause" else "Play") { toggle(); true },
                     CustomAccessibilityAction("Next song") { next(); true }, CustomAccessibilityAction("Previous song") { previous(); true }) }

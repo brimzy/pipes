@@ -61,7 +61,15 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.animation.*
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -110,6 +118,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 private val Carbon = PipesPalette.Background
 private val Panel = PipesPalette.Card
@@ -824,8 +833,18 @@ class MainActivity : ComponentActivity() {
                     Box(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            if (page !in listOf("Now playing", "Settings", "Library")) Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
-                            if (page == "Now playing" && current != null) {
+                            AnimatedVisibility(page !in listOf("Now playing", "Settings", "Library"),
+                                enter = fadeIn(tween(220)) + expandVertically(tween(280, easing = FastOutSlowInEasing)),
+                                exit = fadeOut(tween(120)) + shrinkVertically(tween(240, easing = FastOutSlowInEasing))) {
+                                Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
+                            }
+                            AnimatedContent(targetState = page, modifier = Modifier.weight(1f),
+                                transitionSpec = {
+                                    (fadeIn(tween(260, delayMillis = 50)) + slideInVertically(tween(320, easing = LinearOutSlowInEasing)) { it / 24 })
+                                        .togetherWith(fadeOut(tween(140)) + slideOutVertically(tween(220)) { -it / 48 })
+                                        .using(null)
+                                }, label = "page transition") { visiblePage ->
+                            if (visiblePage == "Now playing" && current != null) {
                                 NowPlaying(
                                     current!!,
                                     isPlaying,
@@ -845,7 +864,7 @@ class MainActivity : ComponentActivity() {
                                     { findArtists(current!!.artist) },
                                     mediaPlayer?.hasNextMediaItem() == true,
                                 )
-                            } else when (page) {
+                            } else when (visiblePage) {
                                 "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }) { RecommendationRegionPicker() }
                                 "Library" -> Library(
                                     likedIds.mapNotNull { knownTracks[it] },
@@ -912,12 +931,20 @@ class MainActivity : ComponentActivity() {
                                 "Explore" -> Explore(::search)
                                 else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
                             }
+                            }
                         }
-                        if (page != "Now playing") BottomNav(page) { if (it == "Search") search("") else page = it }
+                        AnimatedVisibility(page != "Now playing", enter = fadeIn(tween(200)) + expandVertically(tween(280)),
+                            exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
+                            BottomNav(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
+                        }
                     }
-                    if (page !in listOf("Now playing", "Up next")) current?.let { FloatingPlayer(it, isPlaying,
+                    AnimatedVisibility(current != null && page !in listOf("Now playing", "Up next"),
+                        enter = fadeIn(tween(240)) + scaleIn(tween(300), initialScale = .96f),
+                        exit = fadeOut(tween(140))) {
+                    current?.let { FloatingPlayer(it, isPlaying,
                         { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } },
                         { previousPage = page; page = "Now playing" }, { skipTrack(1) }, { skipTrack(-1) }, position, duration) }
+                    }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else 84.dp))
                     }
                 }
@@ -976,6 +1003,16 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit, onSettings: () -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
+    val focus = remember { FocusRequester() }
+    val searchVisibility = remember { MutableTransitionState(false) }
+    searchVisibility.targetState = page == "Search" || page == "Artist Search"
+    LaunchedEffect(page) {
+        if (page == "Search") {
+            snapshotFlow { searchVisibility.isIdle && searchVisibility.currentState }.first { it }
+            focus.requestFocus()
+            keyboard?.show()
+        }
+    }
     Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             PipesWordmark()
@@ -984,12 +1021,14 @@ class MainActivity : ComponentActivity() {
             IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Ink) }
             IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Ink) }
         }
-        if (page != "Library" && page != "Home") {
-        Spacer(Modifier.height(8.dp))
+        AnimatedVisibility(visibleState = searchVisibility,
+            enter = expandVertically(tween(280, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) + fadeIn(tween(220, 60)),
+            exit = shrinkVertically(tween(240, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) + fadeOut(tween(120))) {
+        Column(Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         OutlinedTextField(
             value = query,
             onValueChange = onSearch,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus),
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); onSearch(query) }),
@@ -1003,7 +1042,8 @@ class MainActivity : ComponentActivity() {
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Raised, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
         )
         }
-        if (page == "Home") Spacer(Modifier.height(2.dp))
+        }
+
     }
 }
 
@@ -1112,7 +1152,7 @@ class MainActivity : ComponentActivity() {
     QueueGesture(track, { onPlay(track) }, { add(track) }, onRemove ?: { remove(track) },
         { onLike(track) }, { onRadio(track) }, { onSave(track) }, onSpotify?.let { { it(track) } }) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).shadow(4.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Raised), contentScale = ContentScale.Crop)
+            ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).carbonSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(track.title, color = Ink, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
@@ -1166,7 +1206,7 @@ class MainActivity : ComponentActivity() {
                         Box(Modifier.weight(1f)) {
                             QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                                 Column {
-                                    ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).shadow(8.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Raised), contentScale = ContentScale.Crop)
+                                    ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
                                     Text(track.title, color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp), fontSize = 13.sp)
                                     Text(track.artist, color = Muted, maxLines = 1, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
                                 }
@@ -1611,12 +1651,12 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     release.kind.contains("single", true) || release.kind.contains("ep", true) || release.trackCount == 1L
 
 @Composable private fun ArtistArtwork(imageUrl: String, modifier: Modifier = Modifier) {
-    ArtworkImage(imageUrl, null, modifier.shadow(8.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Raised), contentScale = ContentScale.Crop)
+    ArtworkImage(imageUrl, null, modifier.carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
 }
 
 @Composable private fun ArtistReleaseCard(release: ArtistRelease, index: Int, isSingle: Boolean, onOpen: (ArtistRelease) -> Unit) {
     Column(Modifier.width(if (isSingle) 176.dp else 224.dp).clickable { onOpen(release) }.padding(bottom = 16.dp)) {
-        ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).shadow(12.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Raised), contentScale = ContentScale.Crop)
+        ArtworkImage(release.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
         Text("${(index + 1).toString().padStart(2, '0')}  /  ${release.kind.uppercase()}", color = Muted, fontSize = 10.sp, letterSpacing = 1.sp, modifier = Modifier.padding(top = 16.dp))
         Text(release.title, color = Ink, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         Text(listOfNotNull(release.year?.toString(), release.trackCount.takeIf { it > 0 }?.let { "$it tracks" }).joinToString(" · "), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
@@ -1719,6 +1759,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
+        val artworkSize = minOf(maxWidth - 48.dp, if (compact) 232.dp else 312.dp)
         Box(Modifier.matchParentSize().background(Carbon))
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
@@ -1734,7 +1775,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             }
             Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                SwipeArtwork(track, Modifier.size(if (compact) 232.dp else 312.dp).shadow(24.dp, RoundedCornerShape(16.dp)), previous, next, hasNext)
+                SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
             }
             Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1745,27 +1786,28 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Violet else Ink) }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
+            Column(Modifier.fillMaxWidth().carbonSurface(RoundedCornerShape(24.dp), 4.dp).padding(vertical = 16.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp)) {
             Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
-                color = Ink, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
+                color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
             key(track.id) {
                 PlayerSeekControls(position, duration, seekable, playing, onSeek)
             }
-            Spacer(Modifier.height(14.dp))
+            }
+            Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
                 IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
-                CarbonPlayButton(onClick = toggle) {
-                    if (buffering) PipesLoading(Modifier.size(40.dp))
-                    else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play", modifier = Modifier.size(34.dp))
-                }
+                CarbonPlayButton(playing, buffering, toggle)
                 IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
                 IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                     "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
                     tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Ink) }
             }
-            Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(Ink.copy(alpha = 0.06f)), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = PipesPalette.Line.copy(alpha = .5f))
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
                     Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Radio")
                 }
@@ -1773,7 +1815,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Queue · $queueCount")
                 }
             }
-            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+            }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -1788,12 +1831,15 @@ private fun playbackTime(milliseconds: Long): String {
         listOf("Home" to Icons.Default.Home, "Search" to Icons.Default.Search,
             "Explore" to Icons.Default.Explore, "Library" to Icons.Default.LibraryMusic).forEach { (target, icon) ->
             val selected = page == target || (target == "Library" && page == "Playlist")
+            val surface by animateColorAsState(if (selected) Accent.copy(alpha = .12f) else Color.Transparent, tween(240), label = "navigation surface")
+            val tint by animateColorAsState(if (selected) Accent else Muted, tween(200), label = "navigation tint")
+            val emphasis = animateFloatAsState(if (selected) 1f else .94f, tween(240), label = "navigation emphasis")
             Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp))
-                .background(if (selected) Accent.copy(alpha = .12f) else Color.Transparent)
+                .background(surface)
                 .clickable { onSelect(target) }.padding(vertical = 8.dp).semantics { this.selected = selected },
                 horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(icon, null, tint = if (selected) Accent else Muted, modifier = Modifier.size(24.dp))
-                Text(target, color = if (selected) Accent else Muted, fontSize = 12.sp,
+                Icon(icon, null, tint = tint, modifier = Modifier.size(24.dp).graphicsLayer { scaleX = emphasis.value; scaleY = emphasis.value })
+                Text(target, color = tint, fontSize = 12.sp,
                     fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
             }
         }
@@ -1864,7 +1910,7 @@ private fun DiscoveryHome(
             val remove = LocalRemoveFromQueue.current
             QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                 Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).fillMaxWidth().aspectRatio(1.05f)
-                    .shadow(16.dp, RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp)).background(Raised)) {
+                    .carbonSurface(RoundedCornerShape(12.dp), 8.dp)) {
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .9f)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
@@ -1883,7 +1929,7 @@ private fun DiscoveryHome(
                     Box(Modifier.weight(1f)) {
                         QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
                             Column {
-                                ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).shadow(6.dp, RoundedCornerShape(8.dp)).clip(RoundedCornerShape(8.dp)).background(Raised), contentScale = ContentScale.Crop)
+                                ArtworkImage(track.thumbnailUrl, null, Modifier.fillMaxWidth().aspectRatio(1f).carbonSurface(RoundedCornerShape(8.dp), 4.dp), contentScale = ContentScale.Crop)
                                 Text(track.title, color = Ink, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
                                 Text(track.artist, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
                             }

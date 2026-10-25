@@ -14,11 +14,11 @@ import androidx.compose.ui.graphics.Color
 
 object PipesPalette {
     val Background = Color(0xFF161616)
-    val Card = Color(0xFF1C1C1C)
-    val Raised = Color(0xFF262626)
-    val Line = Color(0xFF393939)
-    val Text = Color(0xFFF2F4F8)
-    val TextSoft = Color(0xFFC6C6C6)
+    val Card = Color(0xFF262626)
+    val Raised = Color(0xFF393939)
+    val Line = Color(0xFF525252)
+    val Text = Color(0xFFF2F2F2)
+    val TextSoft = Color(0xFFD0D0D0)
     val Accent = Color(0xFF78A9FF)
     val Cyan = Color(0xFF3DDBD9)
     val Violet = Color(0xFFBE95FF)
