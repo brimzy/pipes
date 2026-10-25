@@ -4,7 +4,7 @@ import UIKit
 
 /// CarPlay uses the same audio player as the phone and exposes local audio only.
 @MainActor
-final class CarPlaySceneDelegate: NSObject, CPTemplateApplicationSceneDelegate {
+final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicationSceneDelegate {
     private var library: MusicLibrary { .shared }
     private var interfaceController: CPInterfaceController?
     private var subscriptions = Set<AnyCancellable>()
@@ -22,8 +22,11 @@ final class CarPlaySceneDelegate: NSObject, CPTemplateApplicationSceneDelegate {
         queueTemplate.tabTitle = "Queue"
         queueTemplate.tabImage = UIImage(systemName: "text.line.first.and.arrowtriangle.forward")
         for template in [localTemplate, favoritesTemplate, queueTemplate] {
-            template.emptyViewTitle = "No local audio"
-            template.emptyViewSubtitle = "Import audio in Pipes on your iPhone. Online embedded videos are unavailable in CarPlay."
+            template.emptyViewTitleVariants = ["No local audio"]
+            template.emptyViewSubtitleVariants = [
+                "Import audio in Pipes on your iPhone. Online embedded videos are unavailable in CarPlay.",
+                "Import audio on your iPhone first."
+            ]
             template.trailingNavigationBarButtons = [CPBarButton(title: "Now playing") { [weak self] _ in
                 Task { @MainActor in self?.showNowPlaying() }
             }]
