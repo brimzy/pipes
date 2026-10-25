@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Pipes 5.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
-  Oxocarbon charcoal surfaces. Blue, cyan, and violet accents. Your library, queue, and playback in one place.
+  Oxocarbon charcoal surfaces. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -47,6 +47,7 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 
 | Feature | How it works |
 | :--- | :--- |
+| **Android Auto** | Browse saved likes, playlists, completed downloads, and search your saved library from a compatible car host. |
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
@@ -59,7 +60,7 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 ## Design & gestures
 
-Pipes uses Oxocarbon charcoal surfaces with purposeful blue, cyan, and violet accents, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
+Pipes uses Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
 
 Library shows artwork, playlists, likes, and downloads without record simulations. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
@@ -98,7 +99,7 @@ These protections describe the **Android 5.0 app**; the separate iOS preview has
 - Library, likes, playlists, search history, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.
 - Downloads use app-specific storage, without broad storage permissions. Android's system download service manages transfers and may retain download metadata and display titles in notifications. These files are not encrypted by Pipes.
-- Unrecognized media controllers are rejected. Controllers trusted by Android receive limited playback controls; only the app's own UID receives queue/radio commands and full player access. Android may trust notification listeners you explicitly enable, which can see media metadata.
+- Unrecognized media controllers are rejected. Controllers trusted by Android receive limited playback controls; validated car hosts can browse and play saved library entries; only the app's own UID receives Pipes-specific queue/radio commands and arbitrary queue insertion. Android may trust notification listeners you explicitly enable, which can see media metadata.
 - Cleartext network traffic is disabled and playback cannot follow HTTPS-to-HTTP redirects. Direct download inputs reject embedded credentials, custom ports, literal IP addresses, and localhost names. This is input hardening, not a network firewall: direct-link hosts and redirects are still handled by Android's download service. Use sources you trust.
 - Updates still require the official repository asset URL, release checksum, matching app identity/signing certificate, and Android installation confirmation. Release signing secrets stay outside the source tree.
 

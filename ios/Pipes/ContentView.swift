@@ -64,7 +64,7 @@ struct ContentView: View {
             if let track = library.current {
                 Button { showingPlayer = true } label: {
                     HStack {
-                        Image(systemName: "waveform").foregroundStyle(.cyan)
+                        Image(systemName: "waveform").foregroundStyle(PipesStyle.accent)
                         VStack(alignment: .leading) {
                             Text(track.title).font(.headline).lineLimit(1)
                             Text(track.artist).font(.caption).foregroundStyle(.secondary)
@@ -122,7 +122,7 @@ struct PlayerView: View {
                             .font(.caption).foregroundStyle(.secondary)
                         Link("Open in YouTube", destination: URL(string: "https://www.youtube.com/watch?v=\(id)")!)
                     } else {
-                        Image(systemName: "waveform").font(.system(size: 100)).foregroundStyle(.cyan).frame(height: 200)
+                        Image(systemName: "waveform").font(.system(size: 100)).foregroundStyle(PipesStyle.accent).frame(height: 200)
                     }
                     Text(track.title).font(.title2.bold()).multilineTextAlignment(.center)
                     Text(track.artist).foregroundStyle(.secondary)

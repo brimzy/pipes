@@ -49,16 +49,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="ios-v3.0.${GITHUB_RUN_NUMBER}"
+          tag="ios-v5.0.${GITHUB_RUN_NUMBER}"
           cat > build/release-notes.md <<NOTES
           Native Pipes app for iPhone and iPad (iOS 17+).
 
           Download Pipes-iOS.ipa and sign/install it using your sideloading tool. This IPA is unsigned: tapping it in Safari will not install the app.
+
+          CarPlay support is limited to imported local audio, local favorites, and the queue. Real-car use requires an Apple-approved CarPlay audio entitlement and a matching provisioning profile; ordinary unsigned/sideload signing does not enable CarPlay.
 
           Includes music search, YouTube embedded playback, imported audio with background playback and lock-screen controls, likes, and a queue. Online playback requires the app to stay open. Android's radio, discovery feed, Spotify imports, and offline downloader are not yet ported.
 
           Built from ${GITHUB_SHA}. Installation and source build instructions: https://github.com/brimzy/pipes/blob/${GITHUB_SHA}/ios/README.md
           NOTES
           gh release create "$tag" Pipes-iOS.ipa Pipes-iOS.ipa.sha256 \
-            --target "$GITHUB_SHA" --title "Pipes for iPhone 3.0 (build ${GITHUB_RUN_NUMBER})" \
+            --target "$GITHUB_SHA" --title "Pipes for iPhone 5.0 (build ${GITHUB_RUN_NUMBER})" \
             --notes-file build/release-notes.md --latest=false

@@ -27,15 +27,15 @@ object PipesPalette {
     val Blue = Oxocarbon.Base09
     val Error = Oxocarbon.Base0A
     val Sky = Oxocarbon.Base0B
-    val Favorite = Oxocarbon.Base0C
+    val Favorite = Accent
     val Success = Oxocarbon.Base0D
     val Violet = Oxocarbon.Base0E
     val Ice = Oxocarbon.Base0F
 
-    // Visible UI hierarchy: keep these roles distinct from neutral body text.
-    val Heading = Violet
-    val SongTitle = Blue
-    val Brand = Ice
+    // Neutral typography; cyan is reserved for active controls and playback.
+    val Heading = Text
+    val SongTitle = Text
+    val Brand = Text
 }
 
 // Explicitly map every Material role: no default Material purple/red containers.
@@ -45,14 +45,14 @@ private val PipesScheme = darkColorScheme(
     primaryContainer = PipesPalette.Card,
     onPrimaryContainer = PipesPalette.Accent,
     inversePrimary = PipesPalette.Teal,
-    secondary = PipesPalette.Blue,
+    secondary = PipesPalette.Accent,
     onSecondary = PipesPalette.Background,
     secondaryContainer = PipesPalette.Card,
-    onSecondaryContainer = PipesPalette.Blue,
-    tertiary = PipesPalette.Violet,
+    onSecondaryContainer = PipesPalette.Accent,
+    tertiary = PipesPalette.Accent,
     onTertiary = PipesPalette.Background,
     tertiaryContainer = PipesPalette.Card,
-    onTertiaryContainer = PipesPalette.Violet,
+    onTertiaryContainer = PipesPalette.Accent,
     background = PipesPalette.Background,
     onBackground = PipesPalette.Text,
     surface = PipesPalette.Card,
@@ -80,12 +80,12 @@ private val PipesScheme = darkColorScheme(
     primaryFixedDim = PipesPalette.Teal,
     onPrimaryFixed = PipesPalette.Background,
     onPrimaryFixedVariant = PipesPalette.Background,
-    secondaryFixed = PipesPalette.Ice,
-    secondaryFixedDim = PipesPalette.Blue,
+    secondaryFixed = PipesPalette.Cyan,
+    secondaryFixedDim = PipesPalette.Teal,
     onSecondaryFixed = PipesPalette.Background,
     onSecondaryFixedVariant = PipesPalette.Background,
-    tertiaryFixed = PipesPalette.Violet,
-    tertiaryFixedDim = PipesPalette.Violet,
+    tertiaryFixed = PipesPalette.Cyan,
+    tertiaryFixedDim = PipesPalette.Teal,
     onTertiaryFixed = PipesPalette.Background,
     onTertiaryFixedVariant = PipesPalette.Background,
 )

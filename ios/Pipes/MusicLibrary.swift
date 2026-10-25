@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import AVFoundation
 import MediaPlayer
 
@@ -13,6 +14,8 @@ struct Track: Identifiable, Codable, Equatable {
 
 @MainActor
 final class MusicLibrary: ObservableObject {
+    static let shared = MusicLibrary()
+    private var history: [Track] = []
     @Published var tracks: [Track] = []
     @Published var favorites: [Track] = []
     @Published var queue: [Track] = []
@@ -49,7 +52,7 @@ final class MusicLibrary: ObservableObject {
         ended = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor in
                 guard let self, let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
-                self.next()
+                self.nextLocal()
             }
         }
         MPRemoteCommandCenter.shared().playCommand.addTarget { [weak self] _ in
@@ -59,7 +62,24 @@ final class MusicLibrary: ObservableObject {
             Task { @MainActor in self?.pause() }; return .success
         }
         MPRemoteCommandCenter.shared().nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.next() }; return .success
+            Task { @MainActor in self?.nextLocal() }; return .success
+        }
+        MPRemoteCommandCenter.shared().previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.previous() }; return .success
+        }
+        MPRemoteCommandCenter.shared().changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor in self?.seek(event.positionTime) }; return .success
+        }
+    }
+
+    func carPlayable(_ candidates: [Track]) -> [Track] {
+        var seen = Set<String>()
+        return candidates.filter { track in
+            guard let filename = track.filename, !filename.isEmpty,
+                  filename == (filename as NSString).lastPathComponent,
+                  FileManager.default.fileExists(atPath: documents.appendingPathComponent(filename).path) else { return false }
+            return seen.insert(track.id).inserted
         }
     }
 
@@ -88,7 +108,11 @@ final class MusicLibrary: ObservableObject {
         }
         save()
     }
-    func play(_ track: Track) {
+    func play(_ track: Track, rememberHistory: Bool = true) {
+        if rememberHistory, let current, current.filename != nil, current.id != track.id {
+            history.append(current)
+            if history.count > 100 { history.removeFirst(history.count - 100) }
+        }
         pause()
         current = track
         position = 0
@@ -96,6 +120,11 @@ final class MusicLibrary: ObservableObject {
         player.replaceCurrentItem(with: nil)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         guard let filename = track.filename else { return }
+        guard !carPlayable([track]).isEmpty else {
+            error = "This local audio file is no longer available. Import it again on your iPhone."
+            isPlaying = false
+            return
+        }
         let item = AVPlayerItem(url: documents.appendingPathComponent(filename))
         status = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in
@@ -117,9 +146,26 @@ final class MusicLibrary: ObservableObject {
         guard !queue.isEmpty else { pause(); return }
         play(queue.removeFirst())
     }
+    private func nextLocal() {
+        guard let index = queue.firstIndex(where: { !carPlayable([$0]).isEmpty }) else { pause(); return }
+        play(queue.remove(at: index))
+    }
+    func previous() {
+        if position > 3 { seek(0); return }
+        guard let track = history.popLast() else { seek(0); return }
+        if let current, current.filename != nil { queue.insert(current, at: 0) }
+        play(track, rememberHistory: false)
+    }
     func seek(_ seconds: Double) { player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) }
     private func updateNowPlaying() {
-        guard let current, current.filename != nil else { return }
+        let commands = MPRemoteCommandCenter.shared()
+        let local = current?.filename != nil
+        commands.playCommand.isEnabled = local
+        commands.pauseCommand.isEnabled = local
+        commands.nextTrackCommand.isEnabled = local && queue.contains { $0.filename != nil }
+        commands.previousTrackCommand.isEnabled = local
+        commands.changePlaybackPositionCommand.isEnabled = local && duration > 0
+        guard let current, local else { return }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = [
             MPMediaItemPropertyTitle: current.title,
             MPMediaItemPropertyArtist: current.artist,

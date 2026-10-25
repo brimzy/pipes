@@ -4,7 +4,7 @@ Native SwiftUI app for **iOS 17+**, including iPad. Black surfaces and cyan acce
 
 ## Install
 
-Download **Pipes-iOS.ipa** from an `ios-v3.0.*` release on the [release page](https://github.com/brimzy/pipes/releases).
+Download **Pipes-iOS.ipa** from an `ios-v5.0.*` release on the [release page](https://github.com/brimzy/pipes/releases).
 
 The published IPA is **unsigned** and must be signed with your own Apple account using a compatible sideloading tool, or built and installed using Xcode on a Mac. It cannot install directly from Safari. Your signing tool/account determines expiration and device limits. Signed ad hoc distribution requires an Apple distribution certificate and a provisioning profile containing the receiving device.
 
@@ -33,3 +33,11 @@ open Pipes.xcodeproj
 Choose the Pipes target, select your development team under Signing & Capabilities, and run on your iPhone. Use your own bundle identifier if your team cannot register `com.nazcarbon.music.ios`.
 
 The `Publish iPhone release` workflow builds both simulator and device targets before publishing an unsigned IPA and SHA-256 checksum. iOS releases do not replace the Android latest-release pointer.
+
+## CarPlay
+
+The CarPlay audio scene shares the phone's player and browses imported local files, local favorites and the local queue. Selecting a recording queues the remaining items from that list. The Now Playing screen supports play/pause, next, previous and seeking. Missing files and online embedded videos are excluded from the car browser. Import audio on the phone first.
+
+CarPlay on a real vehicle requires Apple approval for the `com.apple.developer.carplay-audio` entitlement and a provisioning profile containing that entitlement. The public IPA is unsigned; routine sideload signing does not grant CarPlay access. The scene and entitlement are included for an approved developer team to sign. The CI checks simulator and device builds; vehicle testing and approved signing remain external requirements.
+
+See https://developer.apple.com/carplay/ for Apple's entitlement process.

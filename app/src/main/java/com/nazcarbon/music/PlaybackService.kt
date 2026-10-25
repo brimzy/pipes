@@ -16,7 +16,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
@@ -40,8 +41,8 @@ import com.nazcarbon.music.data.retryPlaybackRequest
 import kotlinx.coroutines.withContext
 
 @UnstableApi
-class PlaybackService : MediaSessionService() {
-    private var mediaSession: MediaSession? = null
+class PlaybackService : MediaLibraryService() {
+    private var mediaSession: MediaLibrarySession? = null
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var radioSource: NewPipeMusicSource? = null
     private var isRefillingQueue = false
@@ -117,19 +118,30 @@ class PlaybackService : MediaSessionService() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        mediaSession = MediaSession.Builder(this, player).setSessionActivity(openPlayer).setCallback(object : MediaSession.Callback {
+        mediaSession = MediaLibrarySession.Builder(this, player, object : CarMediaLibrary(this@PlaybackService, serviceScope, radioSource!!,
+            { track, session -> queuedItem(track, track.streamUrl, session, false,
+                autoplay = !track.pageUrl.startsWith("content://") && !track.pageUrl.startsWith("file://")) },
+            { session, following ->
+                pendingTracks.clear()
+                pendingTracks.addAll(following)
+                pendingSession = session.takeIf { following.isNotEmpty() }
+            }) {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 if (controller.uid != android.os.Process.myUid()) {
-                    if (!controller.isTrusted) return MediaSession.ConnectionResult.reject()
+                    val car = canBrowse(session, controller)
+                    if (!controller.isTrusted && !car) return MediaSession.ConnectionResult.reject()
+                    val commands = Player.Commands.Builder()
+                        .add(Player.COMMAND_PLAY_PAUSE)
+                        .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                        .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                        .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+                        .add(Player.COMMAND_GET_TIMELINE)
+                    if (car) commands.add(Player.COMMAND_SET_MEDIA_ITEM).add(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+                        .add(Player.COMMAND_PREPARE).add(Player.COMMAND_STOP).add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
                     return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                        .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS)
-                        .setAvailablePlayerCommands(Player.Commands.Builder()
-                            .add(Player.COMMAND_PLAY_PAUSE)
-                            .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
-                            .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
-                            .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
-                            .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
-                            .add(Player.COMMAND_GET_TIMELINE).build())
+                        .setAvailableSessionCommands(if (car) MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS else MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS)
+                        .setAvailablePlayerCommands(commands.build())
                         .build()
                 }
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -172,7 +184,7 @@ class PlaybackService : MediaSessionService() {
                 maybeExtendQueue(player)
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
-        }).build()
+        }).setSessionActivity(openPlayer).build()
     }
 
     private fun recoverPlayback(player: Player) {
@@ -311,6 +323,9 @@ class PlaybackService : MediaSessionService() {
                 MediaMetadata.Builder()
                     .setTitle(track.title)
                     .setArtist(track.artist)
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                     .setArtworkUri(Uri.parse(track.thumbnailUrl))
                     .setExtras(Bundle().apply {
                         putBoolean(RADIO_METADATA_KEY, isRadio)
@@ -325,7 +340,7 @@ class PlaybackService : MediaSessionService() {
             )
             .build()
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
 
     override fun onDestroy() {
         serviceScope.cancel()

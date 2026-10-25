@@ -45,10 +45,10 @@ import kotlin.math.roundToInt
     val add by rememberUpdatedState(onAdd)
     val remove by rememberUpdatedState(onRemove)
     Box(Modifier.fillMaxWidth()) {
-        Row(Modifier.matchParentSize().background(if (drag > 0) P.Cyan.copy(alpha = .12f) else if (drag < 0) P.Violet.copy(alpha = .12f) else P.Raised).padding(horizontal = 24.dp),
+        Row(Modifier.matchParentSize().background(if (drag > 0) P.Cyan.copy(alpha = .12f) else if (drag < 0) P.Raised else P.Raised).padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(if (drag > 0) if (armed) "Release to queue" else "Add to queue" else "", color = P.Cyan, fontSize = 12.sp)
-            Text(if (drag < 0) if (armed) "Release to remove" else "Remove" else "", color = P.Violet, fontSize = 12.sp)
+            Text(if (drag < 0) if (armed) "Release to remove" else "Remove" else "", color = P.TextSoft, fontSize = 12.sp)
         }
         Box(Modifier.offset { IntOffset(offset.roundToInt(), 0) }.background(P.Background)
             .semantics {

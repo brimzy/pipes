@@ -1022,7 +1022,7 @@ class MainActivity : ComponentActivity() {
             Spacer(Modifier.weight(1f))
             if (page == "Home") IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Search, "Search music", tint = PipesPalette.Cyan) }
             IconButton(onClick = { keyboard?.hide(); onSettings() }) { Icon(Icons.Default.Settings, "App settings", tint = Muted) }
-            IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = PipesPalette.Blue) }
+            IconButton(onClick = onOpenAudio) { Icon(Icons.Default.FolderOpen, "Open local audio, including lossless FLAC and WAV", tint = Muted) }
         }
         AnimatedVisibility(visibleState = searchVisibility,
             enter = expandVertically(tween(280, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) + fadeIn(tween(220, 60)),
@@ -1222,7 +1222,7 @@ class MainActivity : ComponentActivity() {
             item(key = "library-tools") {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("YOUR COLLECTION", color = PipesPalette.Cyan, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text("YOUR COLLECTION", color = Muted, fontSize = 11.sp, letterSpacing = 1.5.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
                     }
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1246,7 +1246,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Text("DOWNLOADS · ${downloads.size}", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("DOWNLOADS · ${downloads.size}", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (categories.size > 1) item {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1270,7 +1270,7 @@ class MainActivity : ComponentActivity() {
                 DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
             }
             item {
-                Text("PLAYLISTS", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("PLAYLISTS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (playlists.isEmpty()) item {
                 Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1291,7 +1291,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             item {
-                Text("LIKED SONGS", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
+                Text("LIKED SONGS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = 22.dp, bottom = 8.dp))
             }
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1771,7 +1771,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close player", tint = Ink) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("NOW PLAYING", color = PipesPalette.Cyan, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("NOW PLAYING", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                     Text("Your music, in motion", color = Muted, fontSize = 11.sp)
                 }
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
@@ -1904,7 +1904,7 @@ private fun DiscoveryHome(
                 }, color = Ink, fontSize = 40.sp, lineHeight = 44.sp,
                     fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: "A NEW FREQUENCY", color = Accent, fontSize = 10.sp,
+                    Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: "A NEW FREQUENCY", color = Muted, fontSize = 10.sp,
                         letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = PipesPalette.Cyan) }
                 }
@@ -1920,7 +1920,7 @@ private fun DiscoveryHome(
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Carbon.copy(alpha = .96f)))))
                     Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
-                        Text("01  /  IN YOUR ORBIT", color = PipesPalette.Cyan, fontSize = 10.sp, letterSpacing = 2.sp)
+                        Text("01  /  IN YOUR ORBIT", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
                         Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
                         Text(track.artist, color = Ink.copy(alpha = .7f), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
                     }
