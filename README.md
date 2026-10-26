@@ -51,7 +51,7 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Explore** | Browse moods and genres with playable artwork previews, session caching, refresh and retry. |
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
-| **Playback** | Background audio, shuffle, repeat, a live queue, and a draggable seek handle over the waveform. |
+| **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
 | **Your library** | Save liked songs, create playlists, and revisit recent searches. |
 | **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
@@ -67,7 +67,7 @@ A compact floating navigation dock expands the active destination, with custom l
 
 Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-The circular mini-player floats above app content. Drag it anywhere inside the safe area; it stays where you release it. Tap to open the player, double tap to start radio, or hold for playback controls. Hold either arrow in those controls to keep skipping; use Repeat to cycle off, one song, and all songs. A draggable seek bar stays above navigation during playback. It stays clear of system bars and bottom navigation. Song actions are also available by holding artwork or a song row.
+Playback opens in the full player, with the original waveform seek design. Song actions are available by holding artwork or a song row.
 
 ## Updates & settings
 

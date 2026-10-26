@@ -46,9 +46,7 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
     Slider(value = value.coerceIn(0f, maximum), onValueChange = onChange,
         onValueChangeFinished = onFinished, valueRange = 0f..maximum, enabled = enabled,
         interactionSource = interactions, modifier = Modifier.fillMaxWidth().hoverable(interactions),
-        thumb = {
-            Box(Modifier.size(20.dp).background(PipesPalette.Cyan, CircleShape))
-        },
+        thumb = { Spacer(Modifier.size(0.dp)) },
         track = { state ->
             Spacer(Modifier.fillMaxWidth().height(44.dp).drawWithCache {
                 val count = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)

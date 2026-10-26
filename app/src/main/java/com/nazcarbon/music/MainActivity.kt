@@ -932,15 +932,6 @@ class MainActivity : ComponentActivity() {
                             NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
                         }
                     }
-                    AnimatedVisibility(current != null && page !in listOf("Now playing", "Up next"),
-                        enter = fadeIn(tween(240)) + scaleIn(tween(300), initialScale = .96f),
-                        exit = fadeOut(tween(140))) {
-                    current?.let { FloatingPlayer(it, isPlaying,
-                        { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } },
-                        { previousPage = page; page = "Now playing" }, { skipTrack(1) }, { skipTrack(-1) }, position, duration,
-                        { startRadio(it) }, { mediaPlayer?.repeatMode = (repeat + 1) % 3 }, repeat,
-                        { mediaPlayer?.seekTo(it) }, seekable) }
-                    }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else DockClearance))
                     }
                 }
