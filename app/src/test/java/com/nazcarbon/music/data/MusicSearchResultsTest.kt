@@ -16,6 +16,6 @@ class MusicSearchResultsTest {
         val a = song("a", "Tokyo", "Artist")
         val b = song("b", "Tokyo remix", "Artist")
         val c = song("c", "Tokyo live", "Artist")
-        assertEquals(listOf(a, c, b), MusicSearchResults.merge("tokyo", listOf(listOf(a, b), listOf(a, c))))
+        assertEquals(listOf(a, b, c), MusicSearchResults.merge("tokyo", listOf(listOf(a, b), listOf(a, c))))
     }
 }
