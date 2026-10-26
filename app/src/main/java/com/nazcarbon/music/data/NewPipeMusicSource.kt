@@ -81,7 +81,7 @@ class NewPipeMusicSource {
                 catch (failure: Exception) { Result.failure<List<MusicTrack>>(failure) }
             } }.awaitAll()
         if (batches.all { it.isFailure }) throw batches.first().exceptionOrNull()!!
-        batches.flatMap { it.getOrDefault(emptyList()) }.distinctBy { it.pageUrl }
+        MusicSearchResults.merge(query, batches.map { it.getOrDefault(emptyList()) })
     }
 
     fun searchYouTubeLink(target: YouTubeLinks.Target): List<MusicTrack> {

@@ -236,8 +236,6 @@ class MainActivity : ComponentActivity() {
                 var showDownloadDialog by remember { mutableStateOf(false) }
                 var showCategoryDialog by remember { mutableStateOf(false) }
                 var selectedPlaylist by remember { mutableStateOf<String?>(null) }
-                var showLinkDialog by remember { mutableStateOf(false) }
-                var linkText by remember { mutableStateOf("") }
                 var showNewPlaylistDialog by remember { mutableStateOf(false) }
                 var playlistName by remember { mutableStateOf("") }
                 var tracksToSave by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
@@ -562,13 +560,6 @@ class MainActivity : ComponentActivity() {
                     return request
                 }
 
-                fun openLink(link: String) {
-                    val value = link.trim()
-                    if (value.isBlank()) return
-                    showLinkDialog = false
-                    search(value)
-                }
-
                 fun enqueue(candidates: List<MusicTrack>, request: Int) {
                     queueJob?.cancel()
                     queueJob = lifecycleScope.launch {
@@ -830,7 +821,7 @@ class MainActivity : ComponentActivity() {
                             AnimatedVisibility(page !in listOf("Now playing", "Settings", "Library"),
                                 enter = fadeIn(tween(220)) + expandVertically(tween(280, easing = FastOutSlowInEasing)),
                                 exit = fadeOut(tween(120)) + shrinkVertically(tween(240, easing = FastOutSlowInEasing))) {
-                                Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { showLinkDialog = true }, { settingsOrigin = page; page = "Settings" })
+                                Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { settingsOrigin = page; page = "Settings" })
                             }
                             AnimatedContent(targetState = page, modifier = Modifier.weight(1f),
                                 transitionSpec = {
@@ -929,7 +920,14 @@ class MainActivity : ComponentActivity() {
                         }
                         AnimatedVisibility(page != "Now playing", enter = fadeIn(tween(200)) + expandVertically(tween(280)),
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
-                            NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
+                            Column {
+                                current?.let { track ->
+                                    CurrentSongBar(track, isPlaying,
+                                        { previousPage = page; page = "Now playing" },
+                                        { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } })
+                                }
+                                NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
+                            }
                         }
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else DockClearance))
@@ -944,13 +942,6 @@ class MainActivity : ComponentActivity() {
                         onDownload = ::addAudioDownload,
                     )
                 }
-                if (showLinkDialog) AlertDialog(
-                    onDismissRequest = { showLinkDialog = false },
-                    title = { Text("Open a link") },
-                    text = { OutlinedTextField(linkText, { linkText = it }, label = { Text("YouTube video or Spotify song/playlist") }, singleLine = true) },
-                    confirmButton = { TextButton(onClick = { openLink(linkText) }) { Text("Open") } },
-                    dismissButton = { TextButton(onClick = { showLinkDialog = false }) { Text("Cancel") } },
-                )
                 if (showNewPlaylistDialog) AlertDialog(
                     onDismissRequest = { showNewPlaylistDialog = false },
                     title = { Text("New playlist") },
@@ -988,7 +979,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onLink: () -> Unit, onSettings: () -> Unit) {
+@Composable private fun Header(query: String, onSearch: (String) -> Unit, page: String, onOpenAudio: () -> Unit, onSettings: () -> Unit) {
     val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
     val searchVisibility = remember { MutableTransitionState(false) }
@@ -1020,10 +1011,9 @@ class MainActivity : ComponentActivity() {
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             keyboardActions = KeyboardActions(onSearch = { keyboard?.hide(); onSearch(query) }),
             trailingIcon = { Row {
-                IconButton(onClick = onLink) { Icon(Icons.Default.Link, "Search by link", tint = Ink) }
                 if (query.isNotEmpty()) IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Close, "Clear search") }
             } },
-            placeholder = { Text("Search music or paste a YouTube / Spotify link", color = Muted, fontSize = 13.sp) },
+            placeholder = { Text("Search music", color = Muted, fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Ink) },
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Color.Transparent, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
