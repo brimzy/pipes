@@ -73,4 +73,19 @@ class MusicRecommendationsTest {
         assertEquals("Artist", tracks.single().artist)
         assertEquals(205L, tracks.single().durationSeconds)
     }
+    @Test fun `radio retains a full thirty-song batch when source has enough recordings`() {
+        val candidates = (0 until 70).map { song("id$it", "Song $it", "Artist $it") }
+        val radio = MusicRecommendations.radio(song("seed", "Seed"), candidates, Random(3))
+        assertEquals(30, radio.size)
+        assertEquals(30, radio.map { it.pageUrl }.distinct().size)
+    }
+
+    @Test fun `radio parses songs when source omits optional music type metadata`() {
+        val response = JSONObject("""{"contents":[{"playlistPanelVideoRenderer":{
+            "videoId":"0yJ2kIH-Zpk","title":{"runs":[{"text":"Song"}]},
+            "longBylineText":{"runs":[{"text":"Artist"}]},"lengthText":{"runs":[{"text":"3:25"}]}
+        }}]}""")
+        assertEquals(205L, NewPipeMusicSource().parseMusicRadio(response).single().durationSeconds)
+    }
+
 }

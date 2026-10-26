@@ -2,6 +2,10 @@ package com.nazcarbon.music
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectTapGestures
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -87,27 +91,32 @@ import kotlin.math.roundToInt
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable internal fun FloatingPlayer(track: MusicTrack, playing: Boolean, toggle: () -> Unit, expand: () -> Unit,
-    next: () -> Unit, previous: () -> Unit, position: Long, duration: Long) {
+    next: () -> Unit, previous: () -> Unit, position: Long, duration: Long,
+    radio: () -> Unit, repeatMode: () -> Unit, repeat: Int, seek: (Long) -> Unit, seekable: Boolean) {
+    val currentRadio by rememberUpdatedState(radio)
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(bottom = DockClearance, start = 16.dp, end = 16.dp, top = 64.dp)) {
         val density = LocalDensity.current
         val limitX = with(density) { (maxWidth - 80.dp).coerceAtLeast(0.dp).toPx() }
-        val limitY = with(density) { (maxHeight - 80.dp).coerceAtLeast(0.dp).toPx() }
+        val limitY = with(density) { (maxHeight - 168.dp).coerceAtLeast(0.dp).toPx() }
         var x by remember { mutableFloatStateOf(Float.NaN) }
         var y by remember { mutableFloatStateOf(Float.NaN) }
         var dragging by remember { mutableStateOf(false) }
-        val px by animateFloatAsState((if (x.isNaN()) limitX else x).coerceIn(0f, limitX), if (dragging) snap() else spring(.86f, 380f), label = "orb x")
-        val py by animateFloatAsState((if (y.isNaN()) limitY else y).coerceIn(0f, limitY), if (dragging) snap() else spring(.86f, 380f), label = "orb y")
+        val px = (if (x.isNaN()) limitX else x).coerceIn(0f, limitX)
+        val py = (if (y.isNaN()) limitY else y).coerceIn(0f, limitY)
         var controls by remember { mutableStateOf(false) }
         Box(Modifier.offset { IntOffset(px.roundToInt(), py.roundToInt()) }.size(80.dp)
             .carbonSurface(CircleShape, if (dragging) 12.dp else 8.dp, P.Card)
-            .semantics { contentDescription = "${track.title}, ${if (playing) "playing" else "paused"}. Tap to open player. Hold for controls. Drag to move."
+            .semantics { contentDescription = "${track.title}, ${if (playing) "playing" else "paused"}. Tap to open player. Double tap for radio. Hold for controls. Drag to move."
                 customActions = listOf(CustomAccessibilityAction(if (playing) "Pause" else "Play") { toggle(); true },
-                    CustomAccessibilityAction("Next song") { next(); true }, CustomAccessibilityAction("Previous song") { previous(); true }) }
+                    CustomAccessibilityAction("Next song") { next(); true }, CustomAccessibilityAction("Previous song") { previous(); true },
+                    CustomAccessibilityAction("Start radio") { radio(); true }, CustomAccessibilityAction("Playback controls") { controls = true; true }) }
             .pointerInput(limitX, limitY) {
                 detectDragGestures(onDragStart = { dragging = true; x = px; y = py }, onDragCancel = { dragging = false }, onDragEnd = {
-                    dragging = false; x = if (x < limitX / 2) 0f else limitX
+                    dragging = false
                 }) { change, delta -> change.consume(); x = (x + delta.x).coerceIn(0f, limitX); y = (y + delta.y).coerceIn(0f, limitY) }
-            }.combinedClickable(onClick = expand, onLongClick = { controls = true }), contentAlignment = Alignment.Center) {
+            }.pointerInput(Unit) {
+                detectTapGestures(onTap = { expand() }, onDoubleTap = { currentRadio() }, onLongPress = { controls = true })
+            }, contentAlignment = Alignment.Center) {
             ArtworkImage(track.thumbnailUrl, null, Modifier.size(68.dp).artworkSurface(CircleShape, 2.dp), contentScale = ContentScale.Crop)
             Canvas(Modifier.fillMaxSize().padding(3.dp)) {
                 drawArc(P.Text.copy(alpha = .16f), -90f, 360f, false, style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
@@ -118,11 +127,45 @@ import kotlin.math.roundToInt
                 Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, null, tint = P.Text, modifier = Modifier.size(16.dp))
             }
         }
+        Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(P.Card, RoundedCornerShape(12.dp)).padding(horizontal = 16.dp, vertical = 4.dp)) {
+            PlayerSeekControls(position, duration, seekable, playing, seek)
+        }
         if (controls) AlertDialog(onDismissRequest = { controls = false }, title = { Text(track.title) },
-            text = { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song") }
-                IconButton(onClick = toggle) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play / pause") }
-                IconButton(onClick = next) { Icon(Icons.Default.SkipNext, "Next song") }
+            text = { Column {
+                Text("Hold an arrow to keep skipping", color = P.TextSoft)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    HoldSkipButton(false, previous)
+                    IconButton(onClick = toggle) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play / pause") }
+                    HoldSkipButton(true, next)
+                    IconButton(onClick = repeatMode) {
+                        Icon(if (repeat == 1) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                            "Repeat: ${when (repeat) { 1 -> "one song"; 2 -> "all songs"; else -> "off" }}",
+                            tint = if (repeat == 0) P.TextSoft else P.Cyan)
+                    }
+                }
+                TextButton(onClick = { controls = false; radio() }) { Text("Start radio") }
             } }, confirmButton = { TextButton(onClick = { controls = false; expand() }) { Text("Open player") } })
+    }
+}
+
+@Composable
+private fun HoldSkipButton(forward: Boolean, skip: () -> Unit) {
+    val action by rememberUpdatedState(skip)
+    Box(Modifier.size(48.dp).semantics {
+        contentDescription = if (forward) "Next song. Hold to keep skipping" else "Previous song. Hold to keep skipping"
+        onClick { action(); true }
+    }.pointerInput(Unit) {
+        detectTapGestures(onPress = {
+            action()
+            coroutineScope {
+                val held = launch {
+                    delay(600)
+                    while (true) { action(); delay(900) }
+                }
+                try { tryAwaitRelease() } finally { held.cancel() }
+            }
+        })
+    }, contentAlignment = Alignment.Center) {
+        Icon(if (forward) Icons.Default.SkipNext else Icons.Default.SkipPrevious, null, tint = P.Text)
     }
 }

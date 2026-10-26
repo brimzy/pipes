@@ -14,6 +14,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -51,10 +52,10 @@ class NewPipeMusicSource {
         NewPipe.init(AndroidDownloader())
     }
 
-    fun searchSongs(query: String): List<MusicTrack> {
+    fun searchSongs(query: String, filter: String = YoutubeSearchQueryHandlerFactory.MUSIC_SONGS): List<MusicTrack> {
         val handler: SearchQueryHandler = service.searchQHFactory.fromQuery(
             query.trim(),
-            listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS),
+            listOf(filter),
             "",
         )
         val extractor = service.getSearchExtractor(handler)
@@ -70,6 +71,39 @@ class NewPipeMusicSource {
                 pageUrl = item.url,
             )
         }.distinctBy { it.id }
+    }
+
+    suspend fun searchMusic(query: String): List<MusicTrack> = coroutineScope {
+        val batches = listOf(YoutubeSearchQueryHandlerFactory.MUSIC_SONGS, YoutubeSearchQueryHandlerFactory.VIDEOS)
+            .map { filter -> async(Dispatchers.IO) {
+                try { Result.success(searchSongs(query, filter)) }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Exception) { Result.failure<List<MusicTrack>>(failure) }
+            } }.awaitAll()
+        if (batches.all { it.isFailure }) throw batches.first().exceptionOrNull()!!
+        batches.flatMap { it.getOrDefault(emptyList()) }.distinctBy { it.pageUrl }
+    }
+
+    fun searchYouTubeLink(target: YouTubeLinks.Target): List<MusicTrack> {
+        if (target.isRadio && target.videoUrl != null) {
+            val seed = youtubeTrack(target.videoUrl!!)
+            return listOf(seed) + relatedSongs(seed, playlistId = target.playlistId)
+        }
+        target.playlistUrl?.let { url ->
+            val extractor = service.getPlaylistExtractor(url)
+            return collectStreamItems(extractor).map { item ->
+                MusicTrack(item.url, item.name, item.uploaderName.orEmpty(), item.duration,
+                    item.thumbnails.lastOrNull()?.url.orEmpty(), "", item.url)
+            }.distinctBy { it.id }.also { require(it.isNotEmpty()) { "This YouTube playlist has no available songs." } }
+        }
+        return listOf(youtubeTrack(requireNotNull(target.videoUrl)))
+    }
+
+    private fun youtubeTrack(url: String): MusicTrack {
+        val extractor = service.getStreamExtractor(url)
+        extractor.fetchPage()
+        return MusicTrack(url, extractor.name, extractor.uploaderName, extractor.length,
+            extractor.thumbnails.lastOrNull()?.url.orEmpty(), "", url)
     }
 
     fun searchArtists(query: String): List<MusicArtist> {
@@ -499,7 +533,7 @@ class NewPipeMusicSource {
         ).also { audioCache[track.pageUrl] = System.currentTimeMillis() to it }
     }
 
-    fun relatedSongs(track: MusicTrack, region: String = "AUTO"): List<MusicTrack> {
+    fun relatedSongs(track: MusicTrack, region: String = "AUTO", playlistId: String? = null): List<MusicTrack> {
         val seed = playableTrack(track)
         val videoId = Regex("(?:[?&]v=|youtu\\.be/)([A-Za-z0-9_-]{11})")
             .find(seed.pageUrl)?.groupValues?.get(1) ?: error("This song has no radio source.")
@@ -507,9 +541,19 @@ class NewPipeMusicSource {
             .put("clientVersion", youtubeMusicClientVersion()).put("hl", RecommendationRegion.language(seed))
         RecommendationRegion.country(region)?.let { client.put("gl", it) }
         val context = JSONObject().put("client", client)
-        val response = youtubeMusicRequest("next", JSONObject().put("videoId", videoId)
-            .put("playlistId", "RDAMVM$videoId").put("isAudioOnly", true), context)
-        return parseMusicRadio(response).filter { it.id != seed.id && it.pageUrl != seed.pageUrl && MusicRecommendations.isMusic(it) }.distinctBy { it.pageUrl }
+        var response = youtubeMusicRequest("next", JSONObject().put("videoId", videoId)
+            .put("playlistId", playlistId ?: "RDAMVM$videoId").put("isAudioOnly", true), context)
+        val tracks = mutableListOf<MusicTrack>()
+        val continuations = mutableSetOf<String>()
+        for (page in 0 until 4) {
+            tracks += parseMusicRadio(response)
+            val token = findContinuation(response)
+            if (tracks.distinctBy { it.pageUrl }.size >= 60 || token == null || !continuations.add(token) || page == 3) break
+            response = try {
+                youtubeMusicRequest("next", JSONObject().put("continuation", token), context)
+            } catch (_: Exception) { break }
+        }
+        return tracks.filter { it.id != seed.id && it.pageUrl != seed.pageUrl && MusicRecommendations.isMusic(it) }.distinctBy { it.pageUrl }
             .also { require(it.isNotEmpty()) { "No related music was returned. Try radio again in a moment." } }
     }
 
@@ -523,7 +567,7 @@ class NewPipeMusicSource {
                 ?.optJSONObject("watchEndpointMusicSupportedConfigs")?.optJSONObject("watchEndpointMusicConfig")
                 ?.optString("musicVideoType").orEmpty()
             if (id.isBlank() || title.isBlank() || artist.isBlank() ||
-                musicType !in setOf("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_OMV")) return@mapNotNull null
+                (musicType.isNotBlank() && musicType !in setOf("MUSIC_VIDEO_TYPE_ATV", "MUSIC_VIDEO_TYPE_OMV"))) return@mapNotNull null
             val durationText = row.optJSONObject("lengthText")?.let(::textFromRuns).orEmpty()
             val seconds = durationText.split(':').fold(0L) { sum, part -> sum * 60 + (part.toLongOrNull() ?: 0) }
             val url = "https://www.youtube.com/watch?v=$id"

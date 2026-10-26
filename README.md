@@ -29,7 +29,7 @@
 
 1. Download **app-release.apk** from the [latest release](https://github.com/brimzy/pipes/releases/latest).
 2. Open the APK and allow installation from your browser or file manager if Android asks.
-3. Open Pipes. Search for music, paste a Spotify link, or use the folder button to play a local file.
+3. Open Pipes. Search for music, paste a YouTube or Spotify link, or use the folder button to play a local file.
 
 **Upgrading from 4.x:** download the first 5.0 APK directly from Releases. The 4.x updater does not recognize 5.x release tags. Install over the existing official app to preserve your library; 5.0 recognizes future 5.x updates.
 
@@ -51,9 +51,9 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Explore** | Browse moods and genres with playable artwork previews, session caching, refresh and retry. |
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
-| **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
+| **Playback** | Background audio, shuffle, repeat, a live queue, and a draggable seek handle over the waveform. |
 | **Your library** | Save liked songs, create playlists, and revisit recent searches. |
-| **Spotify links** | Find a song or import a public playlist without signing in to Spotify. |
+| **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
 | **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
 
@@ -61,13 +61,13 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 ## Design & gestures
 
-Pipes uses a true black canvas and Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings.
+Pipes uses a true black canvas and Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
 
 A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its matte surface has no decorative outline. Spring feedback makes selection and presses responsive.
 
 Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-The circular mini-player floats above app content. Drag it anywhere inside the safe area and release to spring toward the nearest side. Tap to open the player, or hold for playback controls. It stays clear of system bars and bottom navigation. Song actions are also available by holding artwork or a song row.
+The circular mini-player floats above app content. Drag it anywhere inside the safe area; it stays where you release it. Tap to open the player, double tap to start radio, or hold for playback controls. Hold either arrow in those controls to keep skipping; use Repeat to cycle off, one song, and all songs. A draggable seek bar stays above navigation during playback. It stays clear of system bars and bottom navigation. Song actions are also available by holding artwork or a song row.
 
 ## Updates & settings
 

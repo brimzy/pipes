@@ -246,7 +246,7 @@ class PlaybackService : MediaLibraryService() {
         val playlistQueue = pendingSession == queueSession
         if (!playlistQueue && !extras.getBoolean(AUTO_QUEUE_METADATA_KEY)) return
         val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
-        if (android.os.SystemClock.elapsedRealtime() < queueRetryAfter || remaining > 3 || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
+        if (android.os.SystemClock.elapsedRealtime() < queueRetryAfter || remaining > (if (extras.getBoolean(RADIO_METADATA_KEY)) 10 else 3) || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
         val seed = MusicTrack(current.mediaId, current.mediaMetadata.title?.toString().orEmpty(),
             current.mediaMetadata.artist?.toString().orEmpty(), extras.getLong("pipes_duration"),
             current.mediaMetadata.artworkUri?.toString().orEmpty(), "", extras.getString("pipes_page_url") ?: current.mediaId)
@@ -270,7 +270,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 val candidates = ArrayDeque(radioCandidates)
                 var examined = 0
-                while (added < 6 && examined < 18 && sessionStillActive()) {
+                while (added < (if (isRadio) 30 else 6) && examined < (if (isRadio) 60 else 18) && sessionStillActive()) {
                     val batch = if (playlistQueue) {
                         (0 until minOf(3, pendingTracks.size)).map { pendingTracks.removeFirst() }
                     } else (0 until minOf(3, candidates.size)).map { candidates.removeFirst() }

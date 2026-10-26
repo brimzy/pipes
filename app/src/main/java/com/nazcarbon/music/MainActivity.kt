@@ -98,6 +98,7 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.nazcarbon.music.data.SongSearch
+import com.nazcarbon.music.data.YouTubeLinks
 import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.SpotifyPlaylists
 import com.nazcarbon.music.data.AudioDownload
@@ -371,11 +372,16 @@ class MainActivity : ComponentActivity() {
                 val searchScope = rememberCoroutineScope()
                 val songSearch = remember {
                     SongSearch(searchScope, { text ->
-                        val terms = withContext(Dispatchers.IO) {
-                            if (SpotifyLinks.isSpotifyLink(text)) SpotifyLinks.searchQuery(text) else text
+                        val youtube = YouTubeLinks.parse(text)
+                        if (youtube != null) {
+                            withContext(Dispatchers.IO) { source.searchYouTubeLink(youtube) }
+                        } else {
+                            val terms = withContext(Dispatchers.IO) {
+                                if (SpotifyLinks.isSpotifyLink(text)) SpotifyLinks.searchQuery(text) else text
+                            }
+                            saveHistory(com.nazcarbon.music.data.SearchHistory.add(searchHistory, terms))
+                            source.searchMusic(terms)
                         }
-                        saveHistory(com.nazcarbon.music.data.SearchHistory.add(searchHistory, terms))
-                        withContext(Dispatchers.IO) { source.searchSongs(terms) }
                     }) { state ->
                         results = state.tracks
                         loading = state.loading
@@ -559,26 +565,8 @@ class MainActivity : ComponentActivity() {
                 fun openLink(link: String) {
                     val value = link.trim()
                     if (value.isBlank()) return
-                    val youtube = Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:.*&)?v=|shorts/|live/|embed/))([A-Za-z0-9_-]{11})")
-                    val match = youtube.find(value)
-                    if (match != null) {
-                        val url = "https://www.youtube.com/watch?v=${match.groupValues[1]}"
-                        val track = MusicTrack(url, match.groupValues[1], "YouTube link", 0, "", "", url)
-                        knownTracks[track.id] = track
-                        showLinkDialog = false
-                        previousPage = page
-                        play(track)
-                        page = "Now playing"
-                    } else if (SpotifyPlaylists.isPlaylistLink(value)) {
-                        showLinkDialog = false
-                        importSpotifyPlaylist(value)
-                    } else if (SpotifyLinks.isSpotifyLink(value)) {
-                        showLinkDialog = false
-                        search(value)
-                    } else {
-                        showLinkDialog = false
-                        notice = "Paste a YouTube video or Spotify song or playlist link."
-                    }
+                    showLinkDialog = false
+                    search(value)
                 }
 
                 fun enqueue(candidates: List<MusicTrack>, request: Int) {
@@ -949,7 +937,9 @@ class MainActivity : ComponentActivity() {
                         exit = fadeOut(tween(140))) {
                     current?.let { FloatingPlayer(it, isPlaying,
                         { mediaPlayer?.let { p -> if (p.isPlaying) p.pause() else p.play() } },
-                        { previousPage = page; page = "Now playing" }, { skipTrack(1) }, { skipTrack(-1) }, position, duration) }
+                        { previousPage = page; page = "Now playing" }, { skipTrack(1) }, { skipTrack(-1) }, position, duration,
+                        { startRadio(it) }, { mediaPlayer?.repeatMode = (repeat + 1) % 3 }, repeat,
+                        { mediaPlayer?.seekTo(it) }, seekable) }
                     }
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else DockClearance))
                     }
@@ -1042,7 +1032,7 @@ class MainActivity : ComponentActivity() {
                 IconButton(onClick = onLink) { Icon(Icons.Default.Link, "Search by link", tint = Ink) }
                 if (query.isNotEmpty()) IconButton(onClick = { onSearch("") }) { Icon(Icons.Default.Close, "Clear search") }
             } },
-            placeholder = { Text("Songs, artists, albums", color = Muted, fontSize = 13.sp) },
+            placeholder = { Text("Search music or paste a YouTube / Spotify link", color = Muted, fontSize = 13.sp) },
             leadingIcon = { Icon(Icons.Default.Search, null, tint = Ink) },
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Accent, unfocusedBorderColor = Color.Transparent, cursorColor = Accent, focusedContainerColor = Panel, unfocusedContainerColor = Panel),
