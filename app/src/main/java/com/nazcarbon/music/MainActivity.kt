@@ -922,7 +922,8 @@ class MainActivity : ComponentActivity() {
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
                             Column {
                                 current?.let { track ->
-                                    CurrentSongBar(track, isPlaying,
+                                    CurrentSongBar(track, isPlaying, position, duration, seekable,
+                                        { mediaPlayer?.seekTo(it) },
                                         { previousPage = page; page = "Now playing" },
                                         { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } })
                                 }
@@ -1661,10 +1662,10 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
-        val artworkSize = minOf(maxWidth - 48.dp, if (compact) 232.dp else 312.dp)
+        val artworkSize = minOf(maxWidth - 48.dp, (maxHeight - 400.dp).coerceIn(96.dp, 312.dp))
         Box(Modifier.matchParentSize().background(Carbon))
         Column(
-            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp),
+            Modifier.fillMaxSize().padding(horizontal = PipesSpace.Page, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1675,20 +1676,24 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 }
                 IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
             }
-            Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
-            }
-            Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
-                    Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
+            // Artwork yields space before transport controls on short screens or large text.
+            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
                 }
-                IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
+                Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                        Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
+                    }
+                    IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
+                }
+                Spacer(Modifier.height(16.dp))
             }
-            Spacer(Modifier.height(16.dp))
             Column(Modifier.fillMaxWidth().carbonSurface(RoundedCornerShape(24.dp), 4.dp).padding(vertical = 16.dp)) {
             Column(Modifier.padding(horizontal = 16.dp)) {
             Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
