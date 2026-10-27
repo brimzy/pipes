@@ -35,17 +35,19 @@ import kotlin.math.roundToInt
     val threshold = with(LocalDensity.current) { 88.dp.toPx() }
     val haptic = LocalHapticFeedback.current
     val offset by animateFloatAsState(drag, if (dragging) snap() else spring(dampingRatio = .88f, stiffness = 420f), label = "queue swipe")
+    val playNext = LocalPlayNext.current
     val add by rememberUpdatedState(onAdd)
     val remove by rememberUpdatedState(onRemove)
     Box(Modifier.fillMaxWidth()) {
-        Row(Modifier.matchParentSize().background(if (drag > 0) P.Cyan.copy(alpha = .12f) else if (drag < 0) P.Raised else P.Raised).padding(horizontal = 24.dp),
+        Row(Modifier.matchParentSize().background(if (drag > 0) P.Cyan.copy(alpha = .12f) else if (drag < 0) P.Raised else Color.Transparent).padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
             Text(if (drag > 0) if (armed) "Release to queue" else "Add to queue" else "", color = P.Cyan, fontSize = 12.sp)
             Text(if (drag < 0) if (armed) "Release to remove" else "Remove" else "", color = P.TextSoft, fontSize = 12.sp)
         }
-        Box(Modifier.offset { IntOffset(offset.roundToInt(), 0) }.background(P.Background)
+        Box(Modifier.offset { IntOffset(offset.roundToInt(), 0) }.background(if (dragging || offset != 0f) P.Background else Color.Transparent)
             .semantics {
-                customActions = listOf(CustomAccessibilityAction("Add to queue") { add(); true },
+                customActions = listOf(CustomAccessibilityAction("Play next") { playNext(track); true },
+                    CustomAccessibilityAction("Add to queue") { add(); true },
                     CustomAccessibilityAction("Remove from queue") { remove(); true },
                     CustomAccessibilityAction("Song actions") { actions = true; true })
             }
@@ -68,7 +70,7 @@ import kotlin.math.roundToInt
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
             Text(track.title, color = P.SongTitle, style = MaterialTheme.typography.titleLarge)
             Text(track.artist, color = P.TextSoft, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
-            listOf<Pair<String, () -> Unit>>("Add to queue →" to onAdd, "← Remove from queue" to onRemove,
+            listOf<Pair<String, () -> Unit>>("Play next" to { playNext(track) }, "Add to queue →" to onAdd, "← Remove from queue" to onRemove,
                 "Start song radio" to onRadio, "Save to playlist" to onSave).plus(
                 listOfNotNull(onLike?.let { "Like / unlike song" to it }, onSpotify?.let { "Search on Spotify" to it })
             ).forEach { (label, action) ->

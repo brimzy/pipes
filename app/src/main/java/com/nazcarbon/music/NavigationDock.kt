@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -23,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -70,11 +68,10 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
     val markerAlpha by animateFloatAsState(if (selected >= 0) 1f else 0f, label = "dock marker visibility")
     val shape = RoundedCornerShape(20.dp)
 
-    Box(Modifier.fillMaxWidth().background(P.Background).padding(horizontal = PipesSpace.Page, vertical = 12.dp),
+    Box(Modifier.fillMaxWidth().padding(horizontal = PipesSpace.Page, vertical = 12.dp),
         contentAlignment = Alignment.Center) {
         Row(Modifier.widthIn(max = 420.dp).fillMaxWidth()
-            .shadow(4.dp, shape, ambientColor = Color.Black.copy(alpha = .12f), spotColor = Color.Black.copy(alpha = .24f))
-            .background(P.Dock, shape).clip(shape)
+            .playerSurface(shape)
             .padding(horizontal = 8.dp)
             .drawBehind {
                 val widths = weights.map { it.value }

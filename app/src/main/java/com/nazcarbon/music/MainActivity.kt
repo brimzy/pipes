@@ -133,6 +133,8 @@ private val Muted = PipesPalette.TextSoft
 
 internal val LocalRemoveFromQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
 
+internal val LocalPlayNext = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
+
 internal val LocalAddToQueue = staticCompositionLocalOf<(MusicTrack) -> Unit> { {} }
 
 private const val RADIO_METADATA_KEY = "pipes_radio"
@@ -560,6 +562,30 @@ class MainActivity : ComponentActivity() {
                     return request
                 }
 
+                fun closePlayback() {
+                    // Invalidate in-flight stream and queue requests before clearing the session.
+                    playbackRequest += 1
+                    playJob?.cancel()
+                    playJob = null
+                    queueJob?.cancel()
+                    queueJob = null
+                    mediaPlayer?.stop()
+                    mediaPlayer?.clearMediaItems()
+                    current = null
+                    queueTracks = emptyList()
+                    queueIndex = 0
+                    radioSeed = null
+                    radioLoading = false
+                    isPlaying = false
+                    buffering = false
+                    position = 0L
+                    duration = 0L
+                    seekable = false
+                    audioQuality = ""
+                    error = null
+                    if (page == "Now playing" || page == "Up next") page = previousPage
+                }
+
                 fun enqueue(candidates: List<MusicTrack>, request: Int) {
                     queueJob?.cancel()
                     queueJob = lifecycleScope.launch {
@@ -604,6 +630,34 @@ class MainActivity : ComponentActivity() {
                             notice = "Added to queue · ${track.title}"
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { notice = "Couldn't add this song to the queue. Try again." }
+                    }
+                }
+
+                fun playNext(track: MusicTrack) {
+                    if (mediaPlayer?.currentMediaItem == null) { play(track); return }
+                    lifecycleScope.launch {
+                        try {
+                            val player = mediaPlayer ?: return@launch
+                            val session = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                                ?: return@launch
+                            val existing = com.nazcarbon.music.data.PlayNextQueue.existingUpcomingIndex(
+                                (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId },
+                                player.currentMediaItemIndex, track.id)
+                            val resolved = if (existing != null) track else resolveForPlayback(track)
+                            if (player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) != session) {
+                                notice = "Playback changed. Choose Play next again."
+                                return@launch
+                            }
+                            if (existing == null) knownTracks[resolved.id] = resolved
+                            val requestId = PlaybackQueueRequests.register(session, listOf(resolved))
+                            val result = player.sendCustomCommand(SessionCommand("pipes.play_next", Bundle.EMPTY), Bundle().apply {
+                                putString("queue_id", requestId)
+                                putString("session", session)
+                            })
+                            val success = withContext(Dispatchers.IO) { result.get().resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS }
+                            notice = if (success) "Playing next · ${track.title}" else "Playback changed. Choose Play next again."
+                        } catch (cancelled: CancellationException) { throw cancelled }
+                        catch (_: Exception) { notice = "Couldn't play this song next. Try again." }
                     }
                 }
 
@@ -807,7 +861,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(error, notice) {
                     (error ?: notice)?.let { snackbar.showSnackbar(it) }
                 }
-                CompositionLocalProvider(LocalAddToQueue provides ::addToQueue, LocalRemoveFromQueue provides { track ->
+                CompositionLocalProvider(LocalPlayNext provides ::playNext, LocalAddToQueue provides ::addToQueue, LocalRemoveFromQueue provides { track ->
                     mediaPlayer?.let { player ->
                         val index = ((player.currentMediaItemIndex + 1) until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
                         if (index != null) { player.removeMediaItem(index); notice = "Removed from queue · ${track.title}" }
@@ -816,6 +870,7 @@ class MainActivity : ComponentActivity() {
                 }) {
                 Surface(Modifier.fillMaxSize(), color = Carbon) {
                     Box(Modifier.fillMaxSize()) {
+                    PlayerBackdrop(current?.thumbnailUrl.orEmpty(), Modifier.matchParentSize())
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
                             AnimatedVisibility(page !in listOf("Now playing", "Settings", "Library"),
@@ -845,7 +900,7 @@ class MainActivity : ComponentActivity() {
                                     shuffle, { mediaPlayer?.shuffleModeEnabled = !shuffle },
                                     repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
                                     current!!.id in likedIds, { toggleLike(current!!) },
-                                    { page = previousPage }, { saveToCommute(current!!) },
+                                    { page = previousPage }, ::closePlayback, { saveToCommute(current!!) },
                                     { findArtists(current!!.artist) },
                                     mediaPlayer?.hasNextMediaItem() == true,
                                 )
@@ -922,10 +977,11 @@ class MainActivity : ComponentActivity() {
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
                             Column {
                                 current?.let { track ->
-                                    CurrentSongBar(track, isPlaying, position, duration, seekable,
+                                    CurrentSongBar(track, isPlaying, position, duration, seekable, buffering,
                                         { mediaPlayer?.seekTo(it) },
                                         { previousPage = page; page = "Now playing" },
-                                        { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } })
+                                        { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } },
+                                        ::closePlayback)
                                 }
                                 NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
                             }
@@ -992,7 +1048,7 @@ class MainActivity : ComponentActivity() {
             keyboard?.show()
         }
     }
-    Column(Modifier.fillMaxWidth().background(Carbon).padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp)) {
+    Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             PipesWordmark()
             Spacer(Modifier.weight(1f))
@@ -1656,72 +1712,70 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     liked: Boolean,
     onLike: () -> Unit,
     onClose: () -> Unit,
+    onStop: () -> Unit,
     onSave: () -> Unit,
     onArtist: () -> Unit,
     hasNext: Boolean,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val compact = maxHeight < 700.dp
-        val artworkSize = minOf(maxWidth - 48.dp, (maxHeight - 400.dp).coerceIn(96.dp, 312.dp))
-        Box(Modifier.matchParentSize().background(Carbon))
         Column(
             Modifier.fillMaxSize().padding(horizontal = PipesSpace.Page, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close player", tint = Ink) }
+                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Minimize player", tint = Ink) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("NOW PLAYING", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                    Text("Your music, in motion", color = Muted, fontSize = 11.sp)
                 }
-                IconButton(onClick = onSave) { Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Ink) }
+                IconButton(onClick = onStop) { Icon(Icons.Default.Close, "Stop playback and close player", tint = Ink) }
             }
-            // Artwork yields space before transport controls on short screens or large text.
-            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(if (compact) 8.dp else 16.dp))
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
+            // Cover size follows the remaining space; metadata and controls stay visible.
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
+                .padding(vertical = if (compact) 12.dp else 24.dp), contentAlignment = Alignment.Center) {
+                val artworkSize = minOf(maxWidth - 24.dp, maxHeight, 312.dp).coerceAtLeast(0.dp)
+                if (artworkSize > 0.dp) SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
+                    Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
-                Spacer(Modifier.height(if (compact) 12.dp else 24.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
-                        Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
-                    }
-                    IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-            Column(Modifier.fillMaxWidth().carbonSurface(RoundedCornerShape(24.dp), 4.dp).padding(vertical = 16.dp)) {
-            Column(Modifier.padding(horizontal = 16.dp)) {
-            Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
-                color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
-            key(track.id) {
-                PlayerSeekControls(position, duration, seekable, playing, onSeek)
-            }
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
-                IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
-                CarbonPlayButton(playing, buffering, toggle)
-                IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
-                IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                    "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
-                    tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Ink) }
+                IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
             }
             Spacer(Modifier.height(16.dp))
-            HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = PipesPalette.Line.copy(alpha = .5f))
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
-                    Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
+            Column(Modifier.fillMaxWidth().playerSurface(RoundedCornerShape(28.dp)).padding(vertical = 16.dp)) {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
+                        color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
+                    key(track.id) {
+                        PlayerSeekControls(position, duration, seekable, playing, onSeek)
+                    }
                 }
-                TextButton(onClick = onQueue) {
-                    Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
+                    IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
+                    CarbonPlayButton(playing, buffering, toggle)
+                    IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
+                    IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                        "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
+                        tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Ink) }
                 }
-            }
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Ink.copy(alpha = .08f))
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
+                        Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
+                    }
+                    TextButton(onClick = onQueue) {
+                        Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
+                    }
+                    IconButton(onClick = onSave) {
+                        Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Muted, modifier = Modifier.size(20.dp))
+                    }
+                }
             }
             Spacer(Modifier.height(16.dp))
         }

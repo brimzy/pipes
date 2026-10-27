@@ -10,7 +10,7 @@
 
 <p align="center">
   <strong>Pipes 5.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
-  True black canvas. Oxocarbon charcoal surfaces. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
+  Deep ink surfaces. An artwork atmosphere that follows your music. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -57,17 +57,17 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Local audio** | Open files including FLAC and WAV in their original format. |
 | **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
 
-Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song for radio, playlist, like, and queue actions. Screen readers expose the same actions.
+Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song for Play next, radio, playlist, like, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
 
 ## Design & gestures
 
-Pipes uses a true black canvas and Oxocarbon charcoal surfaces with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
+Pipes uses a dark ink canvas and translucent surfaces over a persistent artwork backdrop with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
 
-A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its matte surface has no decorative outline. Spring feedback makes selection and presses responsive.
+A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its translucent ink surface shares the player’s subtle edge lighting and soft shadows. Spring feedback makes selection and presses responsive.
 
 Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-Playback opens in the full player, with the original waveform seek design. Song actions are available by holding artwork or a song row.
+Playback opens in the full player, with the original waveform seek design. Minimize it to keep a compact player with a slim seek bar and elapsed/total time above navigation. The close button stops playback, clears the queue, and dismisses the player; the down arrow minimizes while music continues. Song actions are available by holding artwork or a song row.
 
 ## Updates & settings
 

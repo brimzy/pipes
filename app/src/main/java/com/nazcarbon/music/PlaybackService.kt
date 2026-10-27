@@ -14,6 +14,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
+import com.nazcarbon.music.data.PlayNextQueue
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaLibraryService
@@ -146,6 +148,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                        .add(SessionCommand("pipes.play_next", Bundle.EMPTY))
                         .add(SessionCommand("pipes.start_radio", Bundle.EMPTY))
                         .add(SessionCommand("pipes.set_queue", Bundle.EMPTY)).build())
                     .build()
@@ -155,6 +158,37 @@ class PlaybackService : MediaLibraryService() {
                 customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
                 if (controller.uid != android.os.Process.myUid())
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                if (customCommand.customAction == "pipes.play_next") {
+                    val current = player.currentMediaItem
+                        ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+                    val extras = current.mediaMetadata.extras
+                    val sessionId = extras?.getString(AUTO_QUEUE_SESSION_KEY)
+                    if (sessionId == null || args.getString("session") != sessionId)
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
+                    val track = PlaybackQueueRequests.consume(args.getString("queue_id").orEmpty(), sessionId)?.singleOrNull()
+                        ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    val nextIndex = player.currentMediaItemIndex + 1
+                    val existing = PlayNextQueue.existingUpcomingIndex(
+                        (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId },
+                        player.currentMediaItemIndex, track.id)
+                    if (existing != null) player.moveMediaItem(existing, nextIndex)
+                    else player.addMediaItem(nextIndex, queuedItem(track, track.streamUrl, sessionId,
+                        extras.getBoolean(RADIO_METADATA_KEY), extras.getBoolean(AUTO_QUEUE_METADATA_KEY)))
+                    if (player.shuffleModeEnabled) {
+                        val timeline = player.currentTimeline
+                        val order = buildList {
+                            var index = timeline.getFirstWindowIndex(true)
+                            while (index != C.INDEX_UNSET) {
+                                add(index)
+                                index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, true)
+                            }
+                        }
+                        player.setShuffleOrder(DefaultShuffleOrder(
+                            PlayNextQueue.prioritize(order, player.currentMediaItemIndex, nextIndex).toIntArray(),
+                            System.nanoTime()))
+                    }
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 if (customCommand.customAction == "pipes.set_queue") {
                     val sessionId = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
                     if (sessionId == null || args.getString("session") != sessionId)
