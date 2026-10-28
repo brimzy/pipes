@@ -52,6 +52,42 @@ class AudioReactiveTest {
         assertTrue(AudioLevels.frame.all { it == 0f })
         processor.reset()
     }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun `empty pipeline input before first audio frame does not copy buffer onto itself`() {
+        val processor = ReactiveAudioProcessor()
+        processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(
+            48000, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.queueInput(androidx.media3.common.audio.AudioProcessor.EMPTY_BUFFER)
+        assertFalse(processor.output.hasRemaining())
+        processor.reset()
+    }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun `media pipeline handles startup audio draining and reconfiguration`() {
+        val processor = ReactiveAudioProcessor()
+        val pipeline = androidx.media3.common.audio.AudioProcessingPipeline(
+            com.google.common.collect.ImmutableList.of(processor))
+        for (rate in listOf(48000, 44100)) {
+            pipeline.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(
+                rate, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
+            pipeline.flush()
+            assertTrue(pipeline.isOperational)
+            repeat(3) { assertFalse(pipeline.output.hasRemaining()) }
+            val bytes = ByteArray(4096) { (it % 251).toByte() }
+            val input = java.nio.ByteBuffer.allocateDirect(bytes.size)
+                .order(java.nio.ByteOrder.nativeOrder()).put(bytes)
+            input.flip()
+            pipeline.queueInput(input)
+            val actual = ByteArray(bytes.size)
+            pipeline.output.get(actual)
+            assertArrayEquals(bytes, actual)
+            repeat(3) { assertFalse(pipeline.output.hasRemaining()) }
+            pipeline.queueEndOfStream()
+            assertFalse(pipeline.output.hasRemaining())
+            assertTrue(pipeline.isEnded)
+        }
+        pipeline.reset()
+    }
     @Test fun `mini player left skips next and right skips previous only after threshold`() {
         assertEquals(1, trackSwipeDirection(-56f, 56f, true))
         assertEquals(-1, trackSwipeDirection(56f, 56f, true))

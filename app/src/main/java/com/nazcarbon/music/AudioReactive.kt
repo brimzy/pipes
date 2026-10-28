@@ -41,6 +41,9 @@ internal class ReactiveAudioProcessor : BaseAudioProcessor() {
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) inputAudioFormat else AudioFormat.NOT_SET
     override fun queueInput(inputBuffer: ByteBuffer) {
+        // Media3 polls with its shared EMPTY_BUFFER before audio and while draining.
+        // Avoid reusing that same zero-capacity buffer as both copy source and destination.
+        if (!inputBuffer.hasRemaining()) return
         val copy = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val window = (inputAudioFormat.sampleRate / 120).coerceAtLeast(1) * inputAudioFormat.channelCount
         var changed = false
