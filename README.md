@@ -87,7 +87,7 @@ Online playback uses YouTube Music recordings. Spotify links provide song and pl
 
 YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links.
 
-Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The main waveform responds to decoded audio amplitude during playback and returns to its original seek pattern when paused or scrubbing.
+Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The main waveform keeps its original silhouette while bass, midrange and treble frequencies animate its bars. Stereo FFT analysis provides fast attacks and smooth decay; pause, silence and scrubbing restore the exact original seek pattern.
 
 ## Instagram downloads
 

@@ -5,32 +5,52 @@ import org.junit.Test
 import kotlin.math.sin
 
 class AudioReactiveTest {
-    @Test fun `silence stays silent`() {
-        val envelope = PcmEnvelope()
-        repeat(4096) { envelope.accept(0f, 64) }
-        assertTrue(envelope.snapshot().all { it == 0f })
-    }
-    @Test fun `audio energy follows input amplitude without depending on polarity`() {
-        fun level(amplitude: Float): Float {
-            val envelope = PcmEnvelope()
-            repeat(64) { envelope.accept(amplitude * sin(it * Math.PI / 8).toFloat(), 64) }
-            return envelope.snapshot().last()
+    private fun tone(frequency: Double, amplitude: Float = .2f, invertedRight: Boolean = false): FloatArray {
+        val spectrum = MusicSpectrum(48000)
+        repeat(4096) {
+            val sample = amplitude * sin(2 * Math.PI * frequency * it / 48000).toFloat()
+            spectrum.accept(sample, if (invertedRight) -sample else sample)
         }
-        assertTrue(level(.2f) > level(.05f) * 3f)
-        assertEquals(level(.2f), level(-.2f), .0001f)
+        return spectrum.snapshot()
     }
-    @Test fun `loud input clamps and silence replaces old energy`() {
-        val envelope = PcmEnvelope()
-        repeat(64) { envelope.accept(1f, 64) }
-        assertEquals(1f, envelope.snapshot().last(), 0f)
-        repeat(48 * 64) { envelope.accept(0f, 64) }
-        assertTrue(envelope.snapshot().all { it == 0f })
+    @Test fun `silence stays silent and clears old spectrum`() {
+        val spectrum = MusicSpectrum(48000)
+        repeat(4096) { spectrum.accept(sin(it * .2).toFloat()) }
+        assertTrue(spectrum.snapshot().any { it > 0f })
+        repeat(4096) { spectrum.accept(0f) }
+        assertTrue(spectrum.snapshot().all { it == 0f })
     }
-    @Test fun `partial input windows are carried across buffers`() {
-        val envelope = PcmEnvelope()
-        repeat(63) { assertFalse(envelope.accept(.1f, 64)) }
-        assertTrue(envelope.accept(.1f, 64))
-        assertEquals(.3f, envelope.snapshot().last(), .0001f)
+    @Test fun `bass mids and treble excite distinct frequency bands`() {
+        fun peak(values: FloatArray) = values.indices.maxBy { values[it] }
+        val bass = peak(tone(100.0))
+        val mids = peak(tone(1000.0))
+        val treble = peak(tone(8000.0))
+        assertTrue("bass bin $bass", bass < 15)
+        assertTrue("mid bin $mids", mids in 20..31)
+        assertTrue("treble bin $treble", treble > 35)
+        assertTrue(bass < mids && mids < treble)
+    }
+    @Test fun `spectrum responds to volume and does not cancel opposite stereo channels`() {
+        val loud = tone(1000.0, .2f)
+        val quiet = tone(1000.0, .02f)
+        assertTrue(loud.max() > quiet.max() + .2f)
+        assertArrayEquals(loud, tone(1000.0, .2f, true), .0001f)
+    }
+    @Test fun `analysis waits for complete window then updates with half window overlap`() {
+        val spectrum = MusicSpectrum(48000)
+        repeat(2047) { assertFalse(spectrum.accept(.1f)) }
+        assertTrue(spectrum.accept(.1f))
+        repeat(1023) { assertFalse(spectrum.accept(.1f)) }
+        assertTrue(spectrum.accept(.1f))
+    }
+    @Test fun `original waveform remains intact and idle or scrubbing restores exact height`() {
+        for (idle in listOf(2f, 7f, 15f)) {
+            assertEquals(idle, waveformHalfHeight(idle, 20f, 1f, 0f), 0f)
+            assertEquals(idle, waveformHalfHeight(idle, 20f, 0f, 1f), 0f)
+            assertTrue(waveformHalfHeight(idle, 20f, .5f, 1f) > idle)
+            assertTrue(waveformHalfHeight(idle, 20f, 1f, 1f) <= 20f)
+        }
+        assertTrue(waveformHalfHeight(2f, 20f, 1f, 1f) < waveformHalfHeight(15f, 20f, 1f, 1f))
     }
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     @Test fun `analysis preserves decoded audio bytes and flush clears levels`() {
@@ -38,7 +58,7 @@ class AudioReactiveTest {
         processor.configure(androidx.media3.common.audio.AudioProcessor.AudioFormat(
             48000, 2, androidx.media3.common.C.ENCODING_PCM_16BIT))
         processor.flush()
-        val bytes = ByteArray(4096) { (it % 251).toByte() }
+        val bytes = ByteArray(8192) { (it % 251).toByte() }
         val input = java.nio.ByteBuffer.allocateDirect(bytes.size).put(bytes)
         input.flip()
         processor.queueInput(input)
@@ -73,7 +93,7 @@ class AudioReactiveTest {
             pipeline.flush()
             assertTrue(pipeline.isOperational)
             repeat(3) { assertFalse(pipeline.output.hasRemaining()) }
-            val bytes = ByteArray(4096) { (it % 251).toByte() }
+            val bytes = ByteArray(8192) { (it % 251).toByte() }
             val input = java.nio.ByteBuffer.allocateDirect(bytes.size)
                 .order(java.nio.ByteOrder.nativeOrder()).put(bytes)
             input.flip()

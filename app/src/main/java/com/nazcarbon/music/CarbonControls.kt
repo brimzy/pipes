@@ -43,7 +43,7 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
     val hovered by interactions.collectIsHoveredAsState()
     val pressed by interactions.collectIsPressedAsState()
     val reactive = playing && !compact && !dragged && !pressed
-    val levels by rememberAudioLevels(reactive)
+    val audioLevels = rememberAudioLevels(reactive)
     val activity by animateFloatAsState(if (reactive) 1f else 0f, tween(180), label = "waveform activity")
     val light by animateFloatAsState(if (dragged || hovered || pressed) 1f else 0f, label = "seek light")
     Slider(value = value.coerceIn(0f, maximum), onValueChange = onChange,
@@ -51,7 +51,7 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
         interactionSource = interactions, modifier = Modifier.fillMaxWidth().hoverable(interactions),
         thumb = { Spacer(Modifier.size(0.dp)) },
         track = { state ->
-            Spacer(Modifier.fillMaxWidth().height(if (compact) 24.dp else 44.dp).drawWithCache {
+            Spacer(Modifier.fillMaxWidth().height(if (compact) 24.dp else 60.dp).drawWithCache {
                 val count = (size.width / 3.dp.toPx()).toInt().coerceAtLeast(1)
                 val bars = List(count) { i ->
                     val x = (i + .5f) * size.width / count
@@ -62,6 +62,7 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                 val radius = (20 + 24 * light).dp.toPx()
                 val width = 1.3.dp.toPx()
                 onDrawBehind {
+                    val levels = audioLevels.value
                     val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
                     val cursor = size.width * fraction
                     if (enabled) {
@@ -77,15 +78,24 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                         val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
                         val base = if (start.x <= cursor) PipesPalette.Text else PipesPalette.Text.copy(alpha = .22f)
                         val color = androidx.compose.ui.graphics.lerp(base, PipesPalette.Text, glow)
-                        val bin = ((start.x / size.width) * levels.size).toInt().coerceIn(0, levels.lastIndex)
+                        val bandPosition = (start.x / size.width) * (levels.size - 1)
+                        val bin = bandPosition.toInt().coerceIn(0, levels.lastIndex)
+                        val nextBin = (bin + 1).coerceAtMost(levels.lastIndex)
+                        val energy = levels[bin] + (levels[nextBin] - levels[bin]) * (bandPosition - bin)
                         val idleHalf = (end.y - start.y) / 2f
-                        val liveHalf = 2.dp.toPx() + levels[bin] * (size.height / 2f - 2.dp.toPx())
-                        val half = idleHalf + (liveHalf - idleHalf) * activity
+                        // Keep the original sculpted silhouette, and let spectrum peaks lift it.
+                        val half = waveformHalfHeight(idleHalf, size.height / 2f - 2.dp.toPx(), energy, activity)
                         val grow = 1f + glow * .45f
                         val middle = size.height / 2
+                        val boundedHalf = (half * grow).coerceAtMost(middle - 1.dp.toPx())
+                        if (enabled && activity * energy > .12f) {
+                            drawLine(PipesPalette.Text.copy(alpha = activity * energy * .10f),
+                                Offset(start.x, middle - boundedHalf), Offset(end.x, middle + boundedHalf),
+                                width * 3.5f, StrokeCap.Round)
+                        }
                         drawLine(if (enabled) color else PipesPalette.Line,
-                            Offset(start.x, middle - half * grow),
-                            Offset(end.x, middle + half * grow), width + glow * 1.dp.toPx(), StrokeCap.Round)
+                            Offset(start.x, middle - boundedHalf),
+                            Offset(end.x, middle + boundedHalf), width + glow * 1.dp.toPx(), StrokeCap.Round)
                     }
                 }
             })

@@ -35,7 +35,7 @@ internal fun FeaturedMusicCarousel(tracks: List<MusicTrack>, current: MusicTrack
     if (cards.isEmpty()) return
     key(current?.id) {
         val pager = rememberPagerState(pageCount = { cards.size })
-        val levels by rememberAudioLevels(playing && cards.getOrNull(pager.currentPage)?.id == current?.id)
+        val audioLevels = rememberAudioLevels(playing && cards.getOrNull(pager.currentPage)?.id == current?.id)
         Column(Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
             HorizontalPager(pager, contentPadding = PaddingValues(horizontal = PipesSpace.Page),
                 pageSpacing = 12.dp, key = { cards[it].id }) { index ->
@@ -67,6 +67,7 @@ internal fun FeaturedMusicCarousel(tracks: List<MusicTrack>, current: MusicTrack
                         Text(track.artist, color = P.TextSoft, fontSize = 12.sp, maxLines = 1,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
                         if (selected && playing) Canvas(Modifier.fillMaxWidth().height(20.dp).padding(top = 8.dp)) {
+                            val levels = audioLevels.value
                             val step = 4.dp.toPx()
                             val start = (size.width - levels.size * step) / 2f
                             levels.forEachIndexed { i, level ->
