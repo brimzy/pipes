@@ -741,7 +741,9 @@ class MainActivity : ComponentActivity() {
 
                 fun skipTrack(offset: Int) {
                     mediaPlayer?.let { player ->
-                        if (offset < 0) player.seekToPrevious()
+                        if (offset < 0) {
+                            if (player.hasPreviousMediaItem()) player.seekToPreviousMediaItem() else player.seekTo(0)
+                        }
                         else if (player.hasNextMediaItem()) player.seekToNextMediaItem()
                     }
                 }
@@ -969,7 +971,7 @@ class MainActivity : ComponentActivity() {
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
-                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
+                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying) { previousPage = page; page = "Now playing" }
                             }
                             }
                         }
@@ -981,7 +983,7 @@ class MainActivity : ComponentActivity() {
                                         { mediaPlayer?.seekTo(it) },
                                         { previousPage = page; page = "Now playing" },
                                         { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } },
-                                        ::closePlayback)
+                                        ::closePlayback, { skipTrack(-1) }, { skipTrack(1) }, mediaPlayer?.hasNextMediaItem() == true)
                                 }
                                 NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
                             }
@@ -1799,6 +1801,7 @@ private fun DiscoveryHome(
     artists: List<String>, current: MusicTrack?, liked: Set<String>,
     onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
     onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit,
+    playing: Boolean, onOpenPlayer: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var tracks by remember { mutableStateOf(feed.snapshot()) }
@@ -1854,22 +1857,8 @@ private fun DiscoveryHome(
                 }
             }
         }
-        if (tracks.isNotEmpty()) item(key = "discovery-feature") {
-            val track = tracks.first()
-            val add = LocalAddToQueue.current
-            val remove = LocalRemoveFromQueue.current
-            QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
-                Box(Modifier.padding(horizontal = PipesSpace.Page).padding(bottom = PipesSpace.Page).fillMaxWidth().aspectRatio(1.45f)
-                    .artworkSurface(RoundedCornerShape(12.dp), 4.dp)) {
-                    ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
-                    Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Carbon.copy(alpha = .96f)))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(PipesSpace.Page)) {
-                        Text("01  /  IN YOUR ORBIT", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
-                        Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
-                        Text(track.artist, color = Ink.copy(alpha = .7f), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-                    }
-                }
-            }
+        if (tracks.isNotEmpty() || current != null) item(key = "discovery-feature") {
+            FeaturedMusicCarousel(tracks, current, playing, onPlay, onOpenPlayer)
         }
         items(tracks.drop(1).chunked(2), key = { "discovery-pair:${it.first().id}" }) { pair ->
             Row(Modifier.padding(horizontal = PipesSpace.Page).padding(bottom = PipesSpace.Page),

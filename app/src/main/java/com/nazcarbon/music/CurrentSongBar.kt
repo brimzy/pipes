@@ -31,10 +31,11 @@ internal fun CurrentSongBar(
     track: MusicTrack, playing: Boolean, position: Long, duration: Long,
     seekable: Boolean, buffering: Boolean, onSeek: (Long) -> Unit,
     openPlayer: () -> Unit, toggle: () -> Unit, onClose: () -> Unit,
+    previous: () -> Unit, next: () -> Unit, hasNext: Boolean,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = PipesSpace.Page, vertical = 4.dp)
         .playerSurface(RoundedCornerShape(20.dp))) {
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 4.dp, top = 8.dp),
+        Row(Modifier.fillMaxWidth().trackSwipe(track.id, hasNext, previous, next).padding(start = 8.dp, end = 4.dp, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Row(Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
                 .clickable(role = Role.Button, onClickLabel = "Open full player", onClick = openPlayer)

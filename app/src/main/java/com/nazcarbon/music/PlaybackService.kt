@@ -66,7 +66,16 @@ class PlaybackService : MediaLibraryService() {
             .setAllowCrossProtocolRedirects(false)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
-        val player = ExoPlayer.Builder(this)
+        val renderers = object : androidx.media3.exoplayer.DefaultRenderersFactory(this) {
+            override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean): androidx.media3.exoplayer.audio.AudioSink =
+                androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setAudioProcessors(arrayOf(ReactiveAudioProcessor()))
+                    .setEnableFloatOutput(false)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .build()
+        }
+        val player = ExoPlayer.Builder(this, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory)))
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -81,6 +90,7 @@ class PlaybackService : MediaLibraryService() {
         radioSource = NewPipeMusicSource().also { it.initialize() }
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                AudioLevels.clear()
                 maybeExtendQueue(player)
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -377,6 +387,7 @@ class PlaybackService : MediaLibraryService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = mediaSession
 
     override fun onDestroy() {
+        AudioLevels.clear()
         serviceScope.cancel()
         radioSource = null
         mediaSession?.run {

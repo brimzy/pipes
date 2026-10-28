@@ -67,7 +67,7 @@ A compact floating navigation dock expands the active destination, with custom l
 
 Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-Playback opens in the full player, with the original waveform seek design. Minimize it to keep a compact player with a slim seek bar and elapsed/total time above navigation. The close button stops playback, clears the queue, and dismisses the player; the down arrow minimizes while music continues. Song actions are available by holding artwork or a song row.
+Playback opens in the full player, with the original waveform seek design. Swipe the mini-player song row left for next or right for previous. Home features a swipeable artwork carousel with live audio motion for the current song. Minimize the full player to keep a compact player with a slim seek bar and elapsed/total time above navigation. The close button stops playback, clears the queue, and dismisses the player; the down arrow minimizes while music continues. Song actions are available by holding artwork or a song row.
 
 ## Updates & settings
 
@@ -87,7 +87,7 @@ Online playback uses YouTube Music recordings. Spotify links provide song and pl
 
 YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links.
 
-Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The waveform is a visual seek control, not measured audio amplitude.
+Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The main waveform responds to decoded audio amplitude during playback and returns to its original seek pattern when paused or scrubbing.
 
 ## Instagram downloads
 

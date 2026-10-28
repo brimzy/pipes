@@ -37,11 +37,14 @@ import kotlin.math.sin
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onChange: (Float) -> Unit, onFinished: () -> Unit, compact: Boolean = false) {
+internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onChange: (Float) -> Unit, onFinished: () -> Unit, compact: Boolean = false, playing: Boolean = false) {
     val interactions = remember { MutableInteractionSource() }
     val dragged by interactions.collectIsDraggedAsState()
     val hovered by interactions.collectIsHoveredAsState()
     val pressed by interactions.collectIsPressedAsState()
+    val reactive = playing && !compact && !dragged && !pressed
+    val levels by rememberAudioLevels(reactive)
+    val activity by animateFloatAsState(if (reactive) 1f else 0f, tween(180), label = "waveform activity")
     val light by animateFloatAsState(if (dragged || hovered || pressed) 1f else 0f, label = "seek light")
     Slider(value = value.coerceIn(0f, maximum), onValueChange = onChange,
         onValueChangeFinished = onFinished, valueRange = 0f..maximum, enabled = enabled,
@@ -74,11 +77,15 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                         val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
                         val base = if (start.x <= cursor) PipesPalette.Text else PipesPalette.Text.copy(alpha = .22f)
                         val color = androidx.compose.ui.graphics.lerp(base, PipesPalette.Text, glow)
+                        val bin = ((start.x / size.width) * levels.size).toInt().coerceIn(0, levels.lastIndex)
+                        val idleHalf = (end.y - start.y) / 2f
+                        val liveHalf = 2.dp.toPx() + levels[bin] * (size.height / 2f - 2.dp.toPx())
+                        val half = idleHalf + (liveHalf - idleHalf) * activity
                         val grow = 1f + glow * .45f
                         val middle = size.height / 2
                         drawLine(if (enabled) color else PipesPalette.Line,
-                            Offset(start.x, middle + (start.y - middle) * grow),
-                            Offset(end.x, middle + (end.y - middle) * grow), width + glow * 1.dp.toPx(), StrokeCap.Round)
+                            Offset(start.x, middle - half * grow),
+                            Offset(end.x, middle + half * grow), width + glow * 1.dp.toPx(), StrokeCap.Round)
                     }
                 }
             })
@@ -151,7 +158,7 @@ internal fun PlayerSeekControls(position: Long, duration: Long, seekable: Boolea
             onChange = { drag = it }, onFinished = {
                 drag?.let { pending = it; onSeek(it.toLong()); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) }
                 drag = null
-            }, compact = compact)
+            }, compact = compact, playing = playing && drag == null && pending == null)
     }
     val elapsed = time(progress.toLong())
     val total = if (duration > 0) time(duration) else "--:--"
