@@ -1717,23 +1717,29 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     onArtist: () -> Unit,
     hasNext: Boolean,
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    fun feedback(action: () -> Unit) {
+        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+        action()
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
+        PlayerStars(playing, Modifier.matchParentSize())
         val compact = maxHeight < 700.dp
         Column(
             Modifier.fillMaxSize().padding(horizontal = PipesSpace.Page, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Minimize player", tint = Ink) }
+                IconButton(onClick = { feedback(onClose) }) { Icon(Icons.Default.KeyboardArrowDown, "Minimize player", tint = Ink) }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("NOW PLAYING", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                 }
-                IconButton(onClick = onStop) { Icon(Icons.Default.Close, "Stop playback and close player", tint = Ink) }
+                IconButton(onClick = { feedback(onStop) }) { Icon(Icons.Default.Close, "Stop playback and close player", tint = Ink) }
             }
             // Cover size follows the remaining space; metadata and controls stay visible.
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
-                .padding(vertical = if (compact) 12.dp else 24.dp), contentAlignment = Alignment.Center) {
-                val artworkSize = minOf(maxWidth - 24.dp, maxHeight, 312.dp).coerceAtLeast(0.dp)
+                .padding(vertical = if (compact) 8.dp else 12.dp), contentAlignment = Alignment.Center) {
+                val artworkSize = minOf(maxWidth, maxHeight, 380.dp).coerceAtLeast(0.dp)
                 if (artworkSize > 0.dp) SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1741,11 +1747,11 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
-                IconButton(onClick = onLike) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                IconButton(onClick = { feedback(onLike) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
             }
             Spacer(Modifier.height(16.dp))
-            Column(Modifier.fillMaxWidth().playerSurface(RoundedCornerShape(28.dp)).padding(vertical = 16.dp)) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
                 Column(Modifier.padding(horizontal = 16.dp)) {
                     Text(if (audioQuality.isBlank()) "Best available audio" else audioQuality,
                         color = Muted, fontSize = 11.sp, modifier = Modifier.align(Alignment.Start))
@@ -1754,26 +1760,26 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onShuffle) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) Accent else Ink) }
-                    IconButton(onClick = previous) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(32.dp)) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { feedback(onShuffle) }) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) PipesPalette.Cyan else Ink) }
+                    IconButton(onClick = { feedback(previous) }) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(24.dp)) }
                     CarbonPlayButton(playing, buffering, toggle)
-                    IconButton(onClick = next, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(32.dp)) }
-                    IconButton(onClick = onRepeat) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                    IconButton(onClick = { feedback(next) }, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(24.dp)) }
+                    IconButton(onClick = { feedback(onRepeat) }) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
                         "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
-                        tint = if (repeat != Player.REPEAT_MODE_OFF) Accent else Ink) }
+                        tint = if (repeat != Player.REPEAT_MODE_OFF) PipesPalette.Cyan else Ink) }
                 }
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Ink.copy(alpha = .08f))
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TextButton(onClick = onRadio, enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
-                        Icon(Icons.Default.Radio, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
+                    TextButton(onClick = { feedback(onRadio) }, modifier = Modifier.weight(1f), enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
+                        Icon(Icons.Default.Radio, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
                     }
-                    TextButton(onClick = onQueue) {
-                        Icon(Icons.Default.QueueMusic, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
+                    TextButton(onClick = { feedback(onQueue) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.QueueMusic, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
                     }
-                    IconButton(onClick = onSave) {
-                        Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Muted, modifier = Modifier.size(20.dp))
+                    IconButton(onClick = { feedback(onSave) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Muted, modifier = Modifier.size(24.dp))
                     }
                 }
             }
@@ -1816,14 +1822,14 @@ private fun DiscoveryHome(
             finally { loading = false }
         }
     }
-    LaunchedEffect(current?.id, refreshToken) {
+    LaunchedEffect(current?.id, artists, refreshToken) {
         while (loading) delay(100)
         loading = true
         exhausted = false
         error = null
         try {
-            val batch = withContext(Dispatchers.IO) { feed.refresh(latestCurrent, latestArtists) }
-            tracks = (batch + tracks).distinctBy { it.id }
+            withContext(Dispatchers.IO) { feed.refresh(latestCurrent, latestArtists) }
+            tracks = feed.snapshot()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Couldn't refresh discovery. Tap to try again." }
         finally { loading = false }
@@ -1833,18 +1839,18 @@ private fun DiscoveryHome(
             if (tracks.isNotEmpty() && last >= 2 + (tracks.size - 1) / 2 - 3 && error == null) loadMore()
         }
     }
-    LazyColumn(state = list, contentPadding = PaddingValues(bottom = 24.dp)) {
+    LazyColumn(state = list, contentPadding = PaddingValues(bottom = PipesSpace.Page)) {
         item(key = "discovery-list-title") {
-            Column(Modifier.fillMaxWidth().padding(24.dp)) {
+            Column(Modifier.fillMaxWidth().padding(PipesSpace.Page)) {
                 Text(buildAnnotatedString {
-                    append("Find your\n")
+                    append("Find your ")
                     withStyle(SpanStyle(color = PipesPalette.Heading)) { append("next feeling.") }
-                }, color = Ink, fontSize = 40.sp, lineHeight = 44.sp,
+                }, color = Ink, fontSize = 32.sp, lineHeight = 36.sp,
                     fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: "A NEW FREQUENCY", color = Muted, fontSize = 10.sp,
                         letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = PipesPalette.Cyan) }
+                    TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = Ink) }
                 }
             }
         }
@@ -1853,11 +1859,11 @@ private fun DiscoveryHome(
             val add = LocalAddToQueue.current
             val remove = LocalRemoveFromQueue.current
             QueueGesture(track, { onPlay(track) }, { add(track) }, { remove(track) }, { onLike(track) }, { onRadio(track) }, { onSave(track) }) {
-                Box(Modifier.padding(horizontal = 24.dp).padding(bottom = 24.dp).fillMaxWidth().aspectRatio(1.05f)
+                Box(Modifier.padding(horizontal = PipesSpace.Page).padding(bottom = PipesSpace.Page).fillMaxWidth().aspectRatio(1.45f)
                     .artworkSurface(RoundedCornerShape(12.dp), 4.dp)) {
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color.Transparent, Carbon.copy(alpha = .96f)))))
-                    Column(Modifier.align(Alignment.BottomStart).padding(24.dp)) {
+                    Column(Modifier.align(Alignment.BottomStart).padding(PipesSpace.Page)) {
                         Text("01  /  IN YOUR ORBIT", color = Muted, fontSize = 10.sp, letterSpacing = 2.sp)
                         Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 12.dp))
                         Text(track.artist, color = Ink.copy(alpha = .7f), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))

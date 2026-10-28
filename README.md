@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 5.0 — a music player with artwork discovery, song radio, and local audio.</strong><br />
-  Deep ink surfaces. An artwork atmosphere that follows your music. Neutral text and a restrained cyan accent. Your library, queue, and playback in one place.
+  <strong>Pipes 5.1 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  Monochrome charcoal surfaces. An artwork atmosphere that follows your music. Neutral text and small color accents for active controls. Your library, queue, and playback in one place.
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Swipe a song right to add it to the queue or left to remove an upcoming entry. C
 
 ## Design & gestures
 
-Pipes uses a dark ink canvas and translucent surfaces over a persistent artwork backdrop with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
+Pipes uses a charcoal canvas and translucent surfaces over a persistent artwork backdrop with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
 
 A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its translucent ink surface shares the player’s subtle edge lighting and soft shadows. Spring feedback makes selection and presses responsive.
 

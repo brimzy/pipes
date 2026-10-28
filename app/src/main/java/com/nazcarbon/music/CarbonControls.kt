@@ -62,17 +62,17 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                     val fraction = ((state.value - state.valueRange.start) / (state.valueRange.endInclusive - state.valueRange.start)).coerceIn(0f, 1f)
                     val cursor = size.width * fraction
                     if (enabled) {
-                        drawCircle(Brush.radialGradient(listOf(PipesPalette.Cyan.copy(alpha = .12f + .18f * light), Color.Transparent),
+                        drawCircle(Brush.radialGradient(listOf(PipesPalette.Text.copy(alpha = .12f + .18f * light), Color.Transparent),
                             center = Offset(cursor, size.height / 2), radius = radius), radius, Offset(cursor, size.height / 2))
                     }
                     if (compact) {
                         val y = size.height / 2
                         drawLine(PipesPalette.Text.copy(alpha = .14f), Offset(0f, y), Offset(size.width, y), 2.dp.toPx(), StrokeCap.Round)
-                        if (enabled && cursor > 0f) drawLine(PipesPalette.Cyan,
+                        if (enabled && cursor > 0f) drawLine(PipesPalette.Text,
                             Offset(0f, y), Offset(cursor, y), 2.dp.toPx(), StrokeCap.Round)
                     } else for ((start, end) in bars) {
                         val glow = if (enabled) light * (1f - abs(start.x - cursor) / radius).coerceIn(0f, 1f) else 0f
-                        val base = if (start.x <= cursor) PipesPalette.Cyan else PipesPalette.Text.copy(alpha = .22f)
+                        val base = if (start.x <= cursor) PipesPalette.Text else PipesPalette.Text.copy(alpha = .22f)
                         val color = androidx.compose.ui.graphics.lerp(base, PipesPalette.Text, glow)
                         val grow = 1f + glow * .45f
                         val middle = size.height / 2
@@ -92,16 +92,17 @@ internal fun CarbonPlayButton(playing: Boolean, buffering: Boolean, onClick: () 
     val compression = animateFloatAsState(if (pressed) .94f else 1f,
         spring(dampingRatio = .85f, stiffness = 650f), label = "transport press")
     val morph = animateFloatAsState(if (playing) 1f else 0f, tween(220), label = "play pause morph")
-    IconButton(onClick = onClick, interactionSource = interactions,
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    IconButton(onClick = { haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove); onClick() }, interactionSource = interactions,
         modifier = Modifier.size(72.dp).hoverable(interactions)
             .semantics { contentDescription = if (playing) "Pause" else "Play" }) {
         Box(Modifier.fillMaxSize().graphicsLayer {
             scaleX = compression.value; scaleY = compression.value
         }.shadow(if (pressed) 4.dp else 16.dp, CircleShape,
-            ambientColor = PipesPalette.Cyan.copy(alpha = .16f),
+            ambientColor = PipesPalette.Text.copy(alpha = .16f),
             spotColor = Color.Black.copy(alpha = .5f))
             .background(Brush.linearGradient(listOf(
-                Color(0xFFCBF7EE), PipesPalette.Cyan, Color(0xFF38A6AB),
+                PipesPalette.White, PipesPalette.Text, Color(0xFFB8B8B8),
             )), CircleShape).clip(CircleShape), contentAlignment = Alignment.Center) {
             Crossfade(targetState = buffering, animationSpec = tween(160), label = "transport buffering") { busy ->
                 if (busy) CircularProgressIndicator(Modifier.size(28.dp), color = PipesPalette.Background, strokeWidth = 2.dp)
@@ -130,6 +131,7 @@ internal fun CarbonPlayButton(playing: Boolean, buffering: Boolean, onClick: () 
 
 @Composable
 internal fun PlayerSeekControls(position: Long, duration: Long, seekable: Boolean, playing: Boolean, onSeek: (Long) -> Unit, compact: Boolean = false) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     var drag by remember { mutableStateOf<Float?>(null) }
     var pending by remember { mutableStateOf<Float?>(null) }
     val animated by animateFloatAsState(position.toFloat(), tween(if (playing && pending == null) 300 else 0), label = "playhead")
@@ -147,7 +149,7 @@ internal fun PlayerSeekControls(position: Long, duration: Long, seekable: Boolea
     val seekBar: @Composable () -> Unit = {
         CarbonSeekBar(progress, duration.coerceAtLeast(1).toFloat(), seekable && duration > 0,
             onChange = { drag = it }, onFinished = {
-                drag?.let { pending = it; onSeek(it.toLong()) }
+                drag?.let { pending = it; onSeek(it.toLong()); haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove) }
                 drag = null
             }, compact = compact)
     }

@@ -83,7 +83,7 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
                 var x = (center(leftIndex) + (center(rightIndex) - center(leftIndex)) * (marker - leftIndex)) * size.width
                 if (rtl) x = size.width - x
                 val half = 10.dp.toPx()
-                drawLine(P.Accent.copy(alpha = markerAlpha), Offset(x - half, size.height - 8.dp.toPx()),
+                drawLine(P.Cyan.copy(alpha = markerAlpha), Offset(x - half, size.height - 8.dp.toPx()),
                     Offset(x + half, size.height - 8.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
             }.selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
             destinations.forEachIndexed { index, title ->
@@ -105,7 +105,7 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
                     .padding(horizontal = 8.dp, vertical = 16.dp)
                     .graphicsLayer { scaleX = compression; scaleY = compression },
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    DockGlyph(index, if (active) P.Text else P.TextSoft.copy(alpha = .75f))
+                    DockGlyph(index, if (active) P.Cyan else P.TextSoft.copy(alpha = .75f))
                     AnimatedVisibility(active, enter = fadeIn() + expandHorizontally(expandFrom = Alignment.Start),
                         exit = fadeOut() + shrinkHorizontally(shrinkTowards = Alignment.Start)) {
                         Text(title, Modifier.padding(start = 8.dp).clearAndSetSemantics {}, color = P.Text,

@@ -15,21 +15,21 @@ import androidx.compose.ui.graphics.Color
 // Source: nyoom-engineering/base16-oxocarbon, base16-oxocarbon-dark.yaml.
 object PipesPalette {
     // Ink surfaces leave room for the artwork atmosphere; canonical tokens stay unchanged.
-    val Background = Color(0xFF050A0E)
-    val Dock = Color(0xFF0B141B)
-    val Card = Color(0xFF101C24)
-    val Raised = Color(0xFF192B35)
-    val Line = Color(0xFF30444D)
+    val Background = Color(0xFF080808)
+    val Dock = Color(0xFF101010)
+    val Card = Color(0xFF181818)
+    val Raised = Color(0xFF242424)
+    val Line = Color(0xFF383838)
     val TextSoft = Oxocarbon.Base04
     val Text = Oxocarbon.Base05
     val White = Oxocarbon.Base06
     val Teal = Oxocarbon.Base07
     val Cyan = Oxocarbon.Base08
-    val Accent = Oxocarbon.Base08
+    val Accent = Oxocarbon.Base05
     val Blue = Oxocarbon.Base09
     val Error = Oxocarbon.Base0A
     val Sky = Oxocarbon.Base0B
-    val Favorite = Accent
+    val Favorite = Oxocarbon.Base0A
     val Success = Oxocarbon.Base0D
     val Violet = Oxocarbon.Base0E
     val Ice = Oxocarbon.Base0F

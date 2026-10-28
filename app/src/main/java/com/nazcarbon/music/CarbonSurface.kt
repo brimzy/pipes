@@ -14,8 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.nazcarbon.music.ui.theme.PipesPalette
 
 internal object PipesSpace {
-    val Page = 24.dp
-    val Section = 32.dp
+    val Page = 20.dp
+    val Section = 24.dp
     val Gap = 16.dp
     val ArtworkText = 8.dp
     val Metadata = 4.dp
@@ -39,4 +39,4 @@ internal fun Modifier.carbonSurface(
     } else Modifier)
 
 internal fun Modifier.artworkSurface(shape: Shape, elevation: Dp = 4.dp): Modifier =
-    carbonSurface(shape, elevation, PipesPalette.Dock, PipesPalette.Ice.copy(alpha = .20f))
+    carbonSurface(shape, elevation, PipesPalette.Dock, PipesPalette.White.copy(alpha = .14f))

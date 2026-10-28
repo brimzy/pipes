@@ -20,11 +20,12 @@ data class AppRelease(val tag: String, val versionCode: Long, val url: String, v
 
     companion object {
         private fun baseCode(tag: String) = when {
+            tag.startsWith("v5.1.") -> 50100L
             tag.startsWith("v5.") -> 50000L
             tag.startsWith("v4.") -> 40000L
             else -> 30000L
         }
-        private val tagPattern = Regex("v[345]\\.0\\.(\\d+)")
+        private val tagPattern = Regex("(?:v[345]\\.0|v5\\.1)\\.(\\d+)")
         fun parse(json: JSONObject): AppRelease? {
             if (json.optBoolean("draft") || json.optBoolean("prerelease")) return null
             val tag = json.optString("tag_name")

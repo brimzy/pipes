@@ -32,6 +32,13 @@ class AppReleaseTest {
         assertNull(AppRelease.decode(update.copy(versionCode = 40034).encode()))
         assertNull(AppRelease.parse(release(tag = "v6.0.34")))
     }
+    @Test fun `version five point one upgrades and round trips`() {
+        val update = AppRelease.parse(release(tag = "v5.1.35"))!!
+        assertEquals(50135L, update.versionCode)
+        assertTrue(update.versionCode > AppRelease.parse(release(tag = "v5.0.34"))!!.versionCode)
+        assertEquals(update, AppRelease.decode(update.encode()))
+        assertNull(AppRelease.decode(update.copy(versionCode = 50035).encode()))
+    }
     @Test fun `version five rejects Android version code overflow`() {
         val maximum = Int.MAX_VALUE.toLong() - 50000
         assertEquals(Int.MAX_VALUE.toLong(), AppRelease.parse(release(tag = "v5.0.$maximum"))!!.versionCode)

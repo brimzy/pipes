@@ -47,16 +47,16 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle -PversionCodeOverride=$((50000 + ${{ github.run_number }})) :app:assembleRelease
+        run: gradle -PversionCodeOverride=$((50100 + ${{ github.run_number }})) :app:assembleRelease
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v5.0.${GITHUB_RUN_NUMBER}"
+          tag="v5.1.${GITHUB_RUN_NUMBER}"
           gh release create "$tag" \
             app/build/outputs/apk/release/app-release.apk \
             --target "$GITHUB_SHA" \
-            --title "Pipes Music 5.0 (build ${GITHUB_RUN_NUMBER})" \
-            --notes-file docs/releases/5.0.md \
+            --title "Pipes Music 5.1 (build ${GITHUB_RUN_NUMBER})" \
+            --notes-file docs/releases/5.1.md \
             --latest

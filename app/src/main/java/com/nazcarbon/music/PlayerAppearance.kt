@@ -46,9 +46,44 @@ internal fun Modifier.playerSurface(shape: Shape, elevation: Dp = 16.dp): Modifi
         ambientColor = Color.Black.copy(alpha = .30f),
         spotColor = Color.Black.copy(alpha = .50f))
         .background(Brush.linearGradient(listOf(
-            P.Raised.copy(alpha = .88f), P.Dock.copy(alpha = .96f),
+            P.Raised.copy(alpha = .72f), P.Dock.copy(alpha = .84f),
         )), shape)
         .border(1.dp, Brush.linearGradient(listOf(
             P.White.copy(alpha = .14f), P.White.copy(alpha = .025f),
         )), shape)
         .clip(shape)
+
+/** Stable star positions; a slow drift stays behind artwork and never intercepts input. */
+@Composable
+internal fun PlayerStars(playing: Boolean, modifier: Modifier = Modifier) {
+    val phase = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+    androidx.compose.runtime.LaunchedEffect(playing) {
+        if (playing && android.animation.ValueAnimator.areAnimatorsEnabled()) {
+            while (true) {
+                phase.animateTo(1f, androidx.compose.animation.core.tween(24000,
+                    easing = androidx.compose.animation.core.LinearEasing))
+                phase.snapTo(0f)
+                kotlinx.coroutines.delay(16)
+            }
+        }
+    }
+    androidx.compose.foundation.Canvas(modifier) {
+        val t = phase.value * kotlin.math.PI.toFloat() * 2f
+        repeat(36) { i ->
+            val x = ((i * .6180339f) % 1f) * size.width
+            val y = ((i * .381966f + .13f) % 1f) * size.height
+            val pulse = .5f + .5f * kotlin.math.sin(t + i * 2.4f)
+            val center = androidx.compose.ui.geometry.Offset(
+                x + kotlin.math.sin(t + i) * 3.dp.toPx(),
+                y + kotlin.math.cos(t + i) * 5.dp.toPx())
+            val radius = (if (i % 7 == 0) 1.2f else .7f).dp.toPx()
+            drawCircle(P.White.copy(alpha = .06f + pulse * .16f), radius, center)
+            if (i % 7 == 0) {
+                val reach = radius * 3
+                val color = P.White.copy(alpha = .04f + pulse * .08f)
+                drawLine(color, center.copy(x = center.x - reach), center.copy(x = center.x + reach), .5.dp.toPx())
+                drawLine(color, center.copy(y = center.y - reach), center.copy(y = center.y + reach), .5.dp.toPx())
+            }
+        }
+    }
+}
