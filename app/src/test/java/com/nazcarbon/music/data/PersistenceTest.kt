@@ -49,6 +49,19 @@ class PersistenceTest {
         assertEquals(restored[2].sourceTotal, restored[2].tracks.size + restored[2].sourceSkipped)
     }
 
+    @Test fun customAlbumsAndEditedPlaylistsSurviveRestartAndLegacyDataStillLoads() {
+        val disk = mutableMapOf<String, String>()
+        val track = MusicTrack("a", "Song", "Artist", 10, "art", "temporary-url", "https://example.com/a")
+        val album = PlaylistEdits.add(MusicPlaylist("My album", emptyList(), isAlbum = true), listOf(track))
+        PlaylistStore.save(preferences(disk), listOf(album, MusicPlaylist("Renamed", emptyList())))
+        val loaded = PlaylistStore.load(preferences(disk))
+        assertTrue(loaded[0].isAlbum)
+        assertEquals("", loaded[0].tracks.single().streamUrl)
+        assertFalse(loaded[1].isAlbum)
+        disk["playlists"] = """[{"name":"Old commute playlist","tracks":[]}]"""
+        assertEquals(MusicPlaylist("Old commute playlist", emptyList()), PlaylistStore.load(preferences(disk)).single())
+    }
+
     @Test fun historyRoundTripDeletionAndClearSurviveReload() {
         var history = SearchHistory.add(listOf("older", "Artist"), " artist ")
         assertEquals(listOf("artist", "older"), history)

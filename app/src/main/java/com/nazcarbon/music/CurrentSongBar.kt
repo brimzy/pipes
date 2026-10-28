@@ -6,6 +6,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +56,10 @@ internal fun CurrentSongBar(
                     else Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
                         if (playing) "Pause" else "Play", tint = P.Text, modifier = Modifier.size(22.dp))
                 }
+            }
+            val download = LocalDownloadTrack.current
+            IconButton(onClick = { download(track) }, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Download, "Download this song", tint = P.TextSoft, modifier = Modifier.size(20.dp))
             }
             IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Close, "Stop playback and close player", tint = P.TextSoft, modifier = Modifier.size(18.dp))

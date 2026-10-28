@@ -509,6 +509,18 @@ class NewPipeMusicSource {
             if (track.pageUrl.startsWith("spotify-search:")) resolved.copy(title = track.title, artist = track.artist) else resolved
         }
 
+    fun resolveForDownload(track: MusicTrack): ResolvedAudioDownload {
+        val playable = playableTrack(track)
+        val extractor = service.getStreamExtractor(playable.pageUrl)
+        extractor.fetchPage()
+        val audio = extractor.audioStreams
+            .filter { it.isUrl && it.deliveryMethod == org.schabi.newpipe.extractor.stream.DeliveryMethod.PROGRESSIVE_HTTP }
+            .maxByOrNull { it.averageBitrate }
+            ?: error("No downloadable audio is available for this recording.")
+        val format = requireNotNull(audio.format) { "Unknown audio format." }
+        return ResolvedAudioDownload(audio.content, format.mimeType, format.suffix).validated()
+    }
+
     fun resolveAudio(track: MusicTrack, forceRefresh: Boolean = false): MusicTrack {
         val cached = audioCache[track.pageUrl]
         if (!forceRefresh && cached != null && System.currentTimeMillis() - cached.first < 10 * 60 * 1000) {

@@ -5,4 +5,5 @@ data class MusicPlaylist(
     val tracks: List<MusicTrack>,
     val sourceTotal: Int = 0,
     val sourceSkipped: Int = 0,
+    val isAlbum: Boolean = false,
 )

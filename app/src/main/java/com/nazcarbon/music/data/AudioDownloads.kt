@@ -15,6 +15,7 @@ data class AudioDownload(
     val artist: String,
     val category: String,
     val mimeType: String,
+    val sourceTrackId: String = "",
 )
 
 data class AudioDownloadStatus(
@@ -99,6 +100,24 @@ object AudioDownloads {
         return AudioDownload(id, cleanTitle, cleanArtist, cleanCategory, mimeType)
     }
 
+    fun enqueueTrack(
+        context: Context, manager: DownloadManager, track: MusicTrack,
+        audio: ResolvedAudioDownload, category: String,
+    ): AudioDownload {
+        audio.validated()
+        val cleanCategory = category.trim().ifBlank { DEFAULT_CATEGORY }
+        require(cleanCategory.length <= 32) { "Category names can be up to 32 characters." }
+        val request = DownloadManager.Request(Uri.parse(audio.url))
+            .setTitle(track.title.take(200))
+            .setDescription("${track.artist} · $cleanCategory".take(300))
+            .setMimeType(audio.mimeType)
+            .setAllowedOverMetered(true)
+            .setAllowedOverRoaming(false)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(context, Environment.DIRECTORY_MUSIC, "${UUID.randomUUID()}.${audio.extension}")
+        return AudioDownload(manager.enqueue(request), track.title, track.artist, cleanCategory, audio.mimeType, track.id)
+    }
+
     fun load(preferences: SharedPreferences): List<AudioDownload> = runCatching {
         val json = JSONArray(preferences.getString(PREF_KEY, "[]"))
         (0 until json.length()).mapNotNull { index ->
@@ -109,6 +128,7 @@ object AudioDownloads {
                 artist = item.getString("artist"),
                 category = item.optString("category", "Unsorted"),
                 mimeType = item.optString("mimeType", "audio/mpeg"),
+                sourceTrackId = item.optString("sourceTrackId", ""),
             )
         }
     }.getOrDefault(emptyList())
@@ -122,6 +142,7 @@ object AudioDownloads {
                     put("artist", download.artist)
                     put("category", download.category)
                     put("mimeType", download.mimeType)
+                    put("sourceTrackId", download.sourceTrackId)
                 })
             }
         }

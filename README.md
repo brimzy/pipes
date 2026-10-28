@@ -52,12 +52,12 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
-| **Your library** | Save liked songs, create playlists, and revisit recent searches. |
+| **Your library** | Save liked songs, create and edit named playlists or custom albums, bulk-add music, and revisit recent searches. |
 | **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
-| **Offline downloads** | Save direct HTTPS audio files or accessible public Instagram videos; organize downloads into categories. |
+| **Offline downloads** | Download the playing song, direct HTTPS audio files, or accessible public Instagram videos; organize downloads into categories. |
 
-Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song for Play next, radio, playlist, like, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
+Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song to select it, then tap more songs and choose **Add to…** to save them together. Use the three-dot menu for Play next, radio, playlist, like, download, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
 
 ## Design & gestures
 
@@ -67,7 +67,7 @@ A compact floating navigation dock expands the active destination, with custom l
 
 Artwork has a muted two-pixel rim and consistent shadows. Home and Explore share the same card layout and spacing. Library opens directly into collection actions, downloads, playlists and liked songs, without duplicate featured recordings. The player presents the original artwork. Its waveform previews time immediately while dragging, grows and glows around the preview point, and commits the seek on release.
 
-Playback opens in the full player, with the original waveform seek design. Swipe the mini-player song row left for next or right for previous. Home features a swipeable artwork carousel with live audio motion for the current song. Minimize the full player to keep a compact player with a slim seek bar and elapsed/total time above navigation. The close button stops playback, clears the queue, and dismisses the player; the down arrow minimizes while music continues. Song actions are available by holding artwork or a song row.
+Playback opens in the full player, with the original waveform seek design. Swipe the mini-player song row left for next or right for previous. Home features a swipeable artwork carousel with live audio motion for the current song. Minimize the full player to keep a compact player with a slim seek bar and elapsed/total time above navigation. The close button stops playback, clears the queue, and dismisses the player; the down arrow minimizes while music continues. Hold a song row or discovery card to select songs in bulk; the three-dot menu opens song actions. Use **+** in the player to choose or create a playlist or custom album. Open a collection to rename it, remove songs, delete it, or add all of its songs to another collection. Artist releases have **Add whole release** for saving an album at once. Kirby inhales cover artwork after successful additions.
 
 ## Updates & settings
 
@@ -85,7 +85,7 @@ Updates preserve your saved data. APKs are checked against the release checksum 
 
 Online playback uses YouTube Music recordings. Spotify links provide song and playlist metadata; playable matches come from YouTube Music.
 
-YouTube audio is compressed. Local FLAC and WAV files retain their original format. The offline downloader accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links.
+YouTube audio is compressed. Local FLAC and WAV files retain their original format. The player’s **Download** button saves the best available progressive audio for the playing song into a chosen offline category. It recognizes local files and already queued or completed downloads. The link downloader also accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links in the manual link form. To download a YouTube Music recording, use the player or song-menu Download action; availability depends on the source.
 
 Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The main waveform keeps its original silhouette while bass, midrange and treble frequencies animate its bars. Stereo FFT analysis provides fast attacks and smooth decay; pause, silence and scrubbing restore the exact original seek pattern.
 

@@ -39,7 +39,8 @@ private val genres = listOf("Indie", "Jazz", "Soul", "Hip-hop", "Alternative", "
 internal fun ExploreScreen(feed: ExploreFeed, current: MusicTrack?, selection: String,
     onSelect: (String) -> Unit, list: LazyListState, onSearch: (String) -> Unit,
     onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
-    onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit) {
+    onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit, onTracksLoaded: (List<MusicTrack>) -> Unit = {}) {
+    val latestTracksLoaded by rememberUpdatedState(onTracksLoaded)
     val choice = scenes.firstOrNull { it.title == selection }
         ?: if (selection == "For you" && current != null) ExploreScene("Beyond ${current.artist}", "A familiar starting point", "${current.artist} music")
         else ExploreScene(selection, "Explore a sound", "$selection music")
@@ -56,12 +57,13 @@ internal fun ExploreScreen(feed: ExploreFeed, current: MusicTrack?, selection: S
         val request = ++generation
         val force = refreshTarget == choice.query
         refreshTarget = null
-        if (loadedQuery != choice.query) tracks = emptyList()
+        if (loadedQuery != choice.query) { tracks = emptyList(); latestTracksLoaded(emptyList()) }
         loading = true
         error = null
         try {
             val result = withContext(Dispatchers.IO) { feed.load(choice.query, refresh = force) }
             tracks = result
+            latestTracksLoaded(result)
             loadedQuery = choice.query
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Couldn't load this sound. Try again." }

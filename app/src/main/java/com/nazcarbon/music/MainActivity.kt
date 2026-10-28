@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.media3.session.SessionCommand
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -111,6 +113,7 @@ import com.nazcarbon.music.data.MusicArtist
 import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
 import com.nazcarbon.music.data.PlaylistStore
+import com.nazcarbon.music.data.PlaylistEdits
 import com.nazcarbon.music.data.PlaybackQueueRequests
 import com.nazcarbon.music.ui.theme.PipesTheme
 import com.nazcarbon.music.ui.theme.PipesPalette
@@ -196,6 +199,7 @@ class MainActivity : ComponentActivity() {
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
                 val discoveryFeed = remember { com.nazcarbon.music.data.DiscoveryFeed(source) }
                 val exploreFeed = remember { com.nazcarbon.music.data.ExploreFeed(source::searchSongs) }
+                var exploreTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var exploreSelection by remember { mutableStateOf("After hours") }
                 val exploreScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 val discoveryScroll = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -239,7 +243,10 @@ class MainActivity : ComponentActivity() {
                 var showCategoryDialog by remember { mutableStateOf(false) }
                 var selectedPlaylist by remember { mutableStateOf<String?>(null) }
                 var showNewPlaylistDialog by remember { mutableStateOf(false) }
-                var playlistName by remember { mutableStateOf("") }
+                var selectedTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+                var collectionAdded by remember { mutableStateOf<CollectionAdded?>(null) }
+                var downloadTrack by remember { mutableStateOf<MusicTrack?>(null) }
+                LaunchedEffect(page) { selectedTracks = emptyList() }
                 var tracksToSave by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var settingsOrigin by remember { mutableStateOf("Home") }
                 var previousPage by remember { mutableStateOf("Home") }
@@ -322,6 +329,8 @@ class MainActivity : ComponentActivity() {
                         else -> "Home"
                     }
                 }
+
+                BackHandler(selectedTracks.isNotEmpty()) { selectedTracks = emptyList() }
 
                 DisposableEffect(mediaPlayer) {
                     val listener = object : Player.Listener {
@@ -502,14 +511,30 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun createPlaylist(name: String) {
-                    val clean = name.trim()
-                    if (clean.isBlank() || playlists.any { it.name.equals(clean, true) }) { notice = "Enter a unique playlist name"; return }
-                    playlists = playlists + MusicPlaylist(clean, emptyList())
+                fun createCollection(name: String, album: Boolean, tracks: List<MusicTrack> = emptyList()): String? = runCatching {
+                    val clean = PlaylistEdits.name(name, playlists)
+                    val collection = PlaylistEdits.add(MusicPlaylist(clean, emptyList(), isAlbum = album), tracks)
+                    playlists = playlists + collection
                     PlaylistStore.save(prefs, playlists)
                     showNewPlaylistDialog = false
-                    playlistName = ""
-                    notice = "Playlist created"
+                    tracksToSave = emptyList()
+                    selectedTracks = emptyList()
+                    if (collection.tracks.isNotEmpty()) collectionAdded = CollectionAdded(collection.tracks, clean)
+                    notice = "${if (album) "Album" else "Playlist"} created · $clean"
+                }.exceptionOrNull()?.message
+
+                fun renameCollection(collection: MusicPlaylist, name: String, album: Boolean): String? = runCatching {
+                    val clean = PlaylistEdits.name(name, playlists, replacing = collection.name)
+                    playlists = playlists.map { if (it.name == collection.name) it.copy(name = clean, isAlbum = album) else it }
+                    PlaylistStore.save(prefs, playlists)
+                    selectedPlaylist = clean
+                }.exceptionOrNull()?.message
+
+                fun removeCollectionTracks(ids: Set<String>) {
+                    playlists = playlists.map { if (it.name == selectedPlaylist) PlaylistEdits.remove(it, ids) else it }
+                    PlaylistStore.save(prefs, playlists)
+                    selectedTracks = emptyList()
+                    notice = "Removed ${ids.size} ${if (ids.size == 1) "song" else "songs"}"
                 }
 
                 fun removePlaylist(playlist: MusicPlaylist) {
@@ -697,34 +722,21 @@ class MainActivity : ComponentActivity() {
                     enqueue(ordered.drop(1), request)
                 }
 
-                fun saveToCommute(track: MusicTrack) {
-                    val name = "Commute Mix"
-                    val currentPlaylist = playlists.firstOrNull { it.name == name }
-                        ?: MusicPlaylist(name, emptyList())
-                    if (currentPlaylist.tracks.any { it.id == track.id }) {
-                        notice = "Already in Commute Mix"
-                        return
-                    }
-                    val updated = currentPlaylist.copy(tracks = currentPlaylist.tracks + track.copy(streamUrl = ""))
-                    playlists = (playlists.filterNot { it.name == name } + updated)
-                    PlaylistStore.save(prefs, playlists)
-                    notice = "Added to Commute Mix"
-                }
-
                 fun choosePlaylist(track: MusicTrack) { tracksToSave = listOf(track) }
-                fun chooseTracksForPlaylist(tracks: List<MusicTrack>) { tracksToSave = tracks }
+                fun chooseTracksForPlaylist(tracks: List<MusicTrack>) { tracksToSave = tracks.distinctBy { it.id } }
                 fun addTracksToPlaylist(name: String) {
-                    val tracks = tracksToSave
                     val playlist = playlists.firstOrNull { it.name == name } ?: return
-                    val existingIds = playlist.tracks.mapTo(mutableSetOf()) { it.id }
-                    val additions = tracks.filter { existingIds.add(it.id) }
-                    if (additions.isEmpty()) { notice = "Already in $name" }
+                    val updated = PlaylistEdits.add(playlist, tracksToSave)
+                    val additions = updated.tracks.drop(playlist.tracks.size)
+                    if (additions.isEmpty()) notice = "Already in $name"
                     else {
-                        playlists = playlists.map { if (it.name == name) it.copy(tracks = it.tracks + additions.map { track -> track.copy(streamUrl = "") }) else it }
+                        playlists = playlists.map { if (it.name == name) updated else it }
                         PlaylistStore.save(prefs, playlists)
+                        collectionAdded = CollectionAdded(additions, name)
                         notice = "Added ${additions.size} ${if (additions.size == 1) "song" else "songs"} to $name"
                     }
                     tracksToSave = emptyList()
+                    selectedTracks = emptyList()
                 }
 
                 fun toggleLike(track: MusicTrack) {
@@ -778,6 +790,48 @@ class MainActivity : ComponentActivity() {
                             downloadDialogError = failure.message ?: "This media link is unsupported."
                         } catch (_: Exception) {
                             downloadDialogError = "Couldn't download this link. Use a direct HTTPS audio file or an accessible public Instagram video."
+                        } finally {
+                            downloadResolving = false
+                        }
+                    }
+                }
+
+                fun chooseDownload(track: MusicTrack) {
+                    if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://") || track.id.startsWith("download:")) {
+                        notice = "This song is already on your device"
+                        return
+                    }
+                    if (downloadResolving) return
+                    downloadDialogError = null
+                    downloadTrack = track
+                }
+
+                fun downloadSong(category: String) {
+                    val track = downloadTrack ?: return
+                    if (downloadResolving) return
+                    downloadResolving = true
+                    downloadDialogError = null
+                    searchScope.launch {
+                        try {
+                            val existing = withContext(Dispatchers.IO) {
+                                downloads.firstOrNull { it.sourceTrackId == track.id &&
+                                    AudioDownloads.status(downloadManager, it.id)?.status in setOf(DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED, DownloadManager.STATUS_SUCCESSFUL) }
+                            }
+                            if (existing != null) {
+                                notice = "Already downloaded or queued · ${track.title}"
+                                downloadTrack = null
+                            } else {
+                                val audio = withContext(Dispatchers.IO) { source.resolveForDownload(track) }
+                                val download = AudioDownloads.enqueueTrack(this@MainActivity, downloadManager, track, audio, category)
+                                downloads = listOf(download) + downloads
+                                AudioDownloads.save(prefs, downloads)
+                                downloadTrack = null
+                                notice = "Download started · ${track.title}"
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            downloadDialogError = failure.message ?: "Couldn't prepare this song. Try again."
                         } finally {
                             downloadResolving = false
                         }
@@ -863,7 +917,12 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(error, notice) {
                     (error ?: notice)?.let { snackbar.showSnackbar(it) }
                 }
-                CompositionLocalProvider(LocalPlayNext provides ::playNext, LocalAddToQueue provides ::addToQueue, LocalRemoveFromQueue provides { track ->
+                CompositionLocalProvider(
+                    LocalDownloadTrack provides ::chooseDownload,
+                    LocalTrackSelection provides TrackSelection(selectedTracks) { track ->
+                        selectedTracks = if (selectedTracks.any { it.id == track.id }) selectedTracks.filterNot { it.id == track.id } else selectedTracks + track
+                    },
+                    LocalPlayNext provides ::playNext, LocalAddToQueue provides ::addToQueue, LocalRemoveFromQueue provides { track ->
                     mediaPlayer?.let { player ->
                         val index = ((player.currentMediaItemIndex + 1) until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
                         if (index != null) { player.removeMediaItem(index); notice = "Removed from queue · ${track.title}" }
@@ -902,9 +961,10 @@ class MainActivity : ComponentActivity() {
                                     shuffle, { mediaPlayer?.shuffleModeEnabled = !shuffle },
                                     repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
                                     current!!.id in likedIds, { toggleLike(current!!) },
-                                    { page = previousPage }, ::closePlayback, { saveToCommute(current!!) },
+                                    { page = previousPage }, ::closePlayback, { choosePlaylist(current!!) },
                                     { findArtists(current!!.artist) },
                                     mediaPlayer?.hasNextMediaItem() == true,
+                                    { chooseDownload(current!!) },
                                 )
                             } else when (visiblePage) {
                                 "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }) { RecommendationRegionPicker() }
@@ -917,7 +977,7 @@ class MainActivity : ComponentActivity() {
                                 { playlist -> selectedPlaylist = playlist.name; page = "Playlist" },
                                 { track -> playSequence(track, likedIds.mapNotNull { knownTracks[it] }) },
                                 ::toggleLike,
-                                ::saveToCommute,
+                                ::choosePlaylist,
                                 downloads,
                                 downloadCategories,
                                 downloadStatuses,
@@ -968,12 +1028,31 @@ class MainActivity : ComponentActivity() {
                                         ::startRadio,
                                         ::choosePlaylist,
                                         { removePlaylist(playlist) },
-                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::saveToCommute, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
+                                        { chooseTracksForPlaylist(playlist.tracks) },
+                                        { ids -> removeCollectionTracks(ids) },
+                                        { name, album -> renameCollection(playlist, name, album) },
+                                    ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
-                                "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist)
+                                "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
                                 else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying) { previousPage = page; page = "Now playing" }
                             }
                             }
+                        }
+                        AnimatedVisibility(selectedTracks.isNotEmpty()) {
+                            SelectionBar(selectedTracks.size, onAll = {
+                                val visible = when (page) {
+                                    "Search" -> results
+                                    "Playlist" -> playlists.firstOrNull { it.name == selectedPlaylist }?.tracks.orEmpty()
+                                    "Release" -> releaseTracks
+                                    "Library" -> likedIds.mapNotNull { knownTracks[it] }
+                                    "Up next" -> queueTracks
+                                    "Home" -> discoveryFeed.snapshot()
+                                    "Explore" -> exploreTracks
+                                    else -> selectedTracks
+                                }
+                                selectedTracks = (selectedTracks + visible).distinctBy { it.id }
+                            }, onAdd = { chooseTracksForPlaylist(selectedTracks) }, onCancel = { selectedTracks = emptyList() },
+                                onRemove = if (page == "Playlist") ({ removeCollectionTracks(selectedTracks.mapTo(mutableSetOf()) { it.id }) }) else null)
                         }
                         AnimatedVisibility(page != "Now playing", enter = fadeIn(tween(200)) + expandVertically(tween(280)),
                             exit = fadeOut(tween(120)) + shrinkVertically(tween(240))) {
@@ -989,6 +1068,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    CollectionAddAnimation(collectionAdded, { collectionAdded = null },
+                        Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom = if (page == "Now playing") 80.dp else DockClearance + 90.dp))
                     SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = if (page == "Now playing") 8.dp else DockClearance))
                     }
                 }
@@ -1001,24 +1082,17 @@ class MainActivity : ComponentActivity() {
                         onDownload = ::addAudioDownload,
                     )
                 }
-                if (showNewPlaylistDialog) AlertDialog(
-                    onDismissRequest = { showNewPlaylistDialog = false },
-                    title = { Text("New playlist") },
-                    text = { OutlinedTextField(playlistName, { playlistName = it }, label = { Text("Playlist name") }, singleLine = true) },
-                    confirmButton = { TextButton(onClick = { createPlaylist(playlistName) }) { Text("Create") } },
-                    dismissButton = { TextButton(onClick = { showNewPlaylistDialog = false }) { Text("Cancel") } },
+                downloadTrack?.let { track ->
+                    DownloadTrackDialog(track, downloadCategories, downloadResolving, downloadDialogError,
+                        onDismiss = { if (!downloadResolving) { downloadTrack = null; downloadDialogError = null } }, onDownload = ::downloadSong)
+                }
+                if (showNewPlaylistDialog) CollectionNameDialog(
+                    onDismiss = { showNewPlaylistDialog = false },
+                    onSave = { name, album -> createCollection(name, album) },
                 )
-                if (tracksToSave.isNotEmpty()) AlertDialog(
-                    onDismissRequest = { tracksToSave = emptyList() },
-                    title = { Text("Add ${tracksToSave.size} ${if (tracksToSave.size == 1) "song" else "songs"} to playlist") },
-                    text = {
-                        Column {
-                            if (playlists.isEmpty()) Text("Create a playlist in Your library first.", color = Muted)
-                            playlists.forEach { playlist -> TextButton(onClick = { addTracksToPlaylist(playlist.name) }) { Text(playlist.name) } }
-                            TextButton(onClick = { tracksToSave = emptyList(); showNewPlaylistDialog = true }) { Text("Create a playlist") }
-                        }
-                    },
-                    confirmButton = { TextButton(onClick = { tracksToSave = emptyList() }) { Text("Done") } },
+                if (tracksToSave.isNotEmpty()) CollectionPicker(
+                    tracksToSave, playlists, onDismiss = { tracksToSave = emptyList() }, onChoose = ::addTracksToPlaylist,
+                    onCreate = { name, album -> createCollection(name, album, tracksToSave) },
                 )
                 if (showCategoryDialog) {
                     CategoryManagerDialog(
@@ -1140,15 +1214,15 @@ class MainActivity : ComponentActivity() {
     val remove = LocalRemoveFromQueue.current
     QueueGesture(track, { onPlay(track) }, { add(track) }, onRemove ?: { remove(track) },
         { onLike(track) }, { onRadio(track) }, { onSave(track) }, onSpotify?.let { { it(track) } }) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 48.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             ArtworkImage(track.thumbnailUrl, null, Modifier.size(56.dp).artworkSurface(RoundedCornerShape(8.dp), 2.dp), contentScale = ContentScale.Crop)
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text(track.title, color = if (active) PipesPalette.Cyan else PipesPalette.SongTitle, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
-                Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp).clickable(enabled = onArtist != null) { onArtist?.invoke(track.artist) })
+                Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp).clickable(enabled = onArtist != null && !LocalTrackSelection.current.active) { onArtist?.invoke(track.artist) })
             }
             if (active) Icon(Icons.Default.GraphicEq, "Now playing", tint = PipesPalette.Cyan, modifier = Modifier.padding(horizontal = 8.dp).size(20.dp))
-            IconButton(onClick = { onLike(track) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Muted, modifier = Modifier.size(20.dp)) }
+            IconButton(onClick = { onLike(track) }, enabled = !LocalTrackSelection.current.active) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Muted, modifier = Modifier.size(20.dp)) }
         }
     }
 }
@@ -1186,7 +1260,7 @@ class MainActivity : ComponentActivity() {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Your library.", color = PipesPalette.Heading, fontSize = 32.sp,
                             fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist", tint = Ink) }
+                        IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist or album", tint = Ink) }
                     }
                     Text("${tracks.size} liked songs · ${playlists.size} playlists", color = Muted,
                         fontSize = 12.sp, modifier = Modifier.padding(top = PipesSpace.ArtworkText))
@@ -1240,7 +1314,7 @@ class MainActivity : ComponentActivity() {
                 DownloadRow(download, downloadStatuses[download.id], onPlayDownload, onRemoveDownload)
             }
             item {
-                Text("PLAYLISTS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
+                Text("PLAYLISTS & ALBUMS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
             }
             if (playlists.isEmpty()) item {
                 Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -1255,7 +1329,7 @@ class MainActivity : ComponentActivity() {
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(playlist.name, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold)
-                        Text("${playlist.tracks.size} songs", color = Muted, fontSize = 12.sp)
+                        Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs", color = Muted, fontSize = 12.sp)
                     }
                     Icon(Icons.Default.PlayArrow, null, tint = Ink)
                 }
@@ -1396,13 +1470,26 @@ class MainActivity : ComponentActivity() {
     onRadio: (MusicTrack) -> Unit,
     onSave: (MusicTrack) -> Unit,
     onDelete: () -> Unit,
+    onCopy: () -> Unit,
+    onRemoveTracks: (Set<String>) -> Unit,
+    onRename: (String, Boolean) -> String?,
 ) {
+    var editing by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(playlist.name, color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete playlist", tint = Ink) }
+        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(playlist.name, color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, "Edit collection", tint = Ink) }
+            IconButton(onClick = { deleting = true }) { Icon(Icons.Default.Delete, "Delete collection", tint = Ink) }
         }
-        Text("${playlist.tracks.size} songs · saved on this device", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
+        Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs · on this device", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
+            TextButton(onClick = { playlist.tracks.firstOrNull()?.let(onPlay) }, enabled = playlist.tracks.isNotEmpty()) { Text("Play all") }
+            TextButton(onClick = onCopy, enabled = playlist.tracks.isNotEmpty()) { Text("Add all to…") }
+            val selection = LocalTrackSelection.current
+            TextButton(onClick = { playlist.tracks.firstOrNull()?.let(selection.toggle) }, enabled = playlist.tracks.isNotEmpty() && !selection.active) { Text("Select songs") }
+        }
         if (playlist.sourceTotal > playlist.tracks.size + playlist.sourceSkipped) {
             Text("Spotify exposes ${playlist.tracks.size} of ${playlist.sourceTotal} songs without sign-in. This is a partial import.",
                 color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 10.dp))
@@ -1412,13 +1499,29 @@ class MainActivity : ComponentActivity() {
                 fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
         }
         if (playlist.tracks.isEmpty()) {
-            Text("Use a song's menu to add it to this playlist.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(PipesSpace.Page))
+            Text("Add the playing song with +, or choose songs from search or an album. Hold a song to select several.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(PipesSpace.Page))
         } else LazyColumn {
-            items(playlist.tracks, key = { it.id }) {
-                TrackRow(it, current?.id == it.id && playing, false, onPlay, {}, onRadio, onSave)
+            items(playlist.tracks, key = { it.id }) { track ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) {
+                        TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, onSave,
+                            onRemove = { onRemoveTracks(setOf(track.id)) })
+                    }
+                    IconButton(onClick = { onRemoveTracks(setOf(track.id)) }) {
+                        Icon(Icons.Default.Close, "Remove ${track.title} from ${playlist.name}", tint = Muted)
+                    }
+                }
             }
         }
     }
+    if (editing) CollectionNameDialog(playlist, onDismiss = { editing = false }, onSave = { name, album ->
+        onRename(name, album).also { if (it == null) editing = false }
+    })
+    if (deleting) AlertDialog(onDismissRequest = { deleting = false },
+        title = { Text("Delete ${playlist.name}?") },
+        text = { Text("This removes the collection from your library. Your downloaded files and other collections stay saved.") },
+        confirmButton = { TextButton(onClick = { deleting = false; onDelete() }) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = { deleting = false }) { Text("Cancel") } })
 }
 
 @Composable private fun UpNext(
@@ -1718,6 +1821,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     onSave: () -> Unit,
     onArtist: () -> Unit,
     hasNext: Boolean,
+    onDownload: () -> Unit,
 ) {
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun feedback(action: () -> Unit) {
@@ -1780,8 +1884,11 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     TextButton(onClick = { feedback(onQueue) }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Default.QueueMusic, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
                     }
-                    IconButton(onClick = { feedback(onSave) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.PlaylistAdd, "Save to Commute Mix", tint = Muted, modifier = Modifier.size(24.dp))
+                    IconButton(onClick = { feedback(onDownload) }) {
+                        Icon(Icons.Default.Download, "Download this song", tint = Ink)
+                    }
+                    IconButton(onClick = { feedback(onSave) }) {
+                        Icon(Icons.Default.PlaylistAdd, "Add to playlist or album", tint = Muted, modifier = Modifier.size(24.dp))
                     }
                 }
             }

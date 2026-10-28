@@ -2,7 +2,11 @@ package com.nazcarbon.music
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -41,15 +45,21 @@ internal fun FeaturedMusicCarousel(tracks: List<MusicTrack>, current: MusicTrack
                 pageSpacing = 12.dp, key = { cards[it].id }) { index ->
                 val track = cards[index]
                 val selected = track.id == current?.id
+                val selection = LocalTrackSelection.current
+                val checked = selection.contains(track)
                 Box(Modifier.fillMaxWidth().aspectRatio(1.15f)
                     .clip(RoundedCornerShape(24.dp)).background(P.Dock)
-                    .clickable(role = Role.Button, onClickLabel = if (selected) "Open player" else "Play ${track.title}") {
-                        if (selected) onOpen() else onPlay(track)
-                    }) {
+                    .then(if (checked) Modifier.border(2.dp, P.Cyan, RoundedCornerShape(24.dp)) else Modifier)
+                    .combinedClickable(role = Role.Button,
+                        onClickLabel = if (selection.active) "Select ${track.title}" else if (selected) "Open player" else "Play ${track.title}",
+                        onLongClickLabel = "Select song", onLongClick = { selection.toggle(track) },
+                        onClick = { if (selection.active) selection.toggle(track) else if (selected) onOpen() else onPlay(track) })) {
                     ArtworkImage(track.thumbnailUrl, null, Modifier.matchParentSize()
                         .blur(40.dp, BlurredEdgeTreatment.Unbounded), contentScale = ContentScale.Crop, alpha = .55f)
                     Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(
                         P.Background.copy(alpha = .12f), P.Background.copy(alpha = .88f)))))
+                    if (checked) Icon(Icons.Default.CheckCircle, "Selected", tint = P.Cyan,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(12.dp).size(24.dp))
                     Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(if (selected) "YOUR FREQUENCY" else "IN YOUR ORBIT", color = P.TextSoft, fontSize = 10.sp, letterSpacing = 1.sp)
