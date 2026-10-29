@@ -13,16 +13,26 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable
 fun PipesLoading(modifier: Modifier = Modifier) {
-    AndroidView(factory = { LoadingGif(it) }, modifier = modifier.size(64.dp))
+    AnimatedAssetGif("loading.gif", "Loading music", modifier.size(64.dp))
+}
+
+@Composable
+internal fun AnimatedAssetGif(assetName: String, description: String?, modifier: Modifier = Modifier) {
+    androidx.compose.runtime.key(assetName) {
+        AndroidView(
+            factory = { AssetGifView(it, assetName) },
+            update = { it.contentDescription = description },
+            modifier = modifier
+        )
+    }
 }
 
 /** Movie supports animated GIFs on every supported Android version, without another dependency. */
 @Suppress("DEPRECATION")
-private class LoadingGif(context: Context) : View(context) {
-    private val movie = context.assets.open("loading.gif").use { Movie.decodeStream(it) }
-    private var started = SystemClock.uptimeMillis()
+private class AssetGifView(context: Context, assetName: String) : View(context) {
+    private val movie = context.assets.open(assetName).use { Movie.decodeStream(it) }
+    private val started = SystemClock.uptimeMillis()
     init {
-        contentDescription = "Loading music"
         setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
     override fun onDraw(canvas: Canvas) {
