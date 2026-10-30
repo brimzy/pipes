@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 5.1 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  <strong>Pipes 5.1.55 — a music player with artwork discovery, song radio, and local audio.</strong><br />
   Monochrome charcoal surfaces. An artwork atmosphere that follows your music. Neutral text and small color accents for active controls. Your library, queue, and playback in one place.
 </p>
 
@@ -29,18 +29,35 @@
 
 1. Download **app-release.apk** from the [latest release](https://github.com/brimzy/pipes/releases/latest).
 2. Open the APK and allow installation from your browser or file manager if Android asks.
-3. Open Pipes. Search for music, paste a YouTube or Spotify link, or use the folder button to play a local file.
+3. Open Pipes and choose **Start tutorial** for seven short lessons with silent practice controls. You can choose **Later**, pause at any lesson, or resume from **Settings → Learn Pipes**.
+4. Search for a song or artist, paste a YouTube or Spotify link into **Search**, or use the top-bar folder button to play a local file. Tap a song to open the full player.
 
 **Upgrading from 4.x:** download the first 5.0 APK directly from Releases. The 4.x updater does not recognize 5.x release tags. Install over the existing official app to preserve your library; 5.0 recognizes future 5.x updates.
 
 Requires **Android 8.0 or newer**. Install new releases over the existing app to keep your library and settings.
 
-## A look inside
+## Learn Pipes
+
+The tutorial is offered once when you first open 5.1.55, including after an upgrade. It works offline and remembers your lesson across restarts. Use **Save & close** to pause, **Back** or **Next lesson** to move at your pace, and **Finish** on the last lesson. Settings lets you resume or replay it.
+
+| Lesson | What you learn |
+| :--- | :--- |
+| **Find music** | Try the navigation tabs; learn Home, Search, Explore, local files, and what Spotify imports actually provide. |
+| **Player** | Practice the real waveform silently; understand seeking, minimizing, pausing, stopping, shuffle, repeat, and artist browsing. |
+| **Queue & radio** | Choose Play next or Add to queue, understand swipe directions, and start radio from an online song. |
+| **Collections** | Save likes, select multiple songs, create or edit playlists and custom albums, and remove songs. |
+| **Cover artwork** | Pick an image or animated GIF, change it, or restore the default cover. |
+| **Offline music** | Distinguish saved library entries from downloaded files, use categories, and choose the right place for a link. |
+| **Settings** | Tune recommendations, install updates, and return to the tutorial. |
+
+Each lesson has a **Try…** button that opens the relevant part of the real app. A small **Continue tutorial** bar brings you back to the lesson; its close button pauses the guide. If a player or queue lesson needs a song first, Pipes opens Search and explains what to do. Practice controls inside the guide are silent; actions after **Try…** use your actual library and player. Online music still needs a connection.
+
+## Tutorial preview
 
 <p align="center">
-  <img src="docs/assets/library.png" alt="Earlier Pipes Library design" width="280" />
+  <img src="docs/assets/tutorial-find.png" alt="Pipes 5.1.55 tutorial with interactive navigation practice" width="280" />
   &nbsp;&nbsp;&nbsp;
-  <img src="docs/assets/player.png" alt="Earlier Pipes player design" width="280" />
+  <img src="docs/assets/tutorial-player.png" alt="Pipes 5.1.55 tutorial with silent waveform and player practice" width="280" />
 </p>
 
 ## What it does
@@ -52,12 +69,13 @@ Requires **Android 8.0 or newer**. Install new releases over the existing app to
 | **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
+| **Learn Pipes** | Seven resumable lessons, silent navigation and waveform practice, and shortcuts into the actual app. |
 | **Your library** | Save liked songs, create and edit named playlists or custom albums, bulk-add music, and revisit recent searches. |
 | **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
 | **Offline downloads** | Download the playing song, direct HTTPS audio files, or accessible public Instagram videos; organize downloads into categories. |
 
-Swipe a song right to add it to the queue or left to remove an upcoming entry. Cross the threshold and release to commit; hold a song to select it, then tap more songs and choose **Add to…** to save them together. Use the three-dot menu for Play next, radio, playlist, like, download, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
+Swipe a song right to add it to the queue or left to remove an upcoming queue entry. In a collection, use the visible remove button or bulk **Remove** to remove saved songs. Cross the threshold and release to commit; hold a song to select it, then tap more songs and choose **Add to…** to save them together. Use the three-dot menu for Play next, radio, playlist, like, download, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
 
 ## Design & gestures
 
@@ -71,8 +89,9 @@ Playback opens in the full player, with the original waveform seek design. Swipe
 
 ## Updates & settings
 
-Open the **gear icon** to find Settings.
+Open the **gear icon** in the top bar on Home, Search, Explore, or Library to find Settings. Minimize the full player first.
 
+- **Learn Pipes:** Resume the tutorial or replay it after finishing.
 - **App updates:** Pipes checks GitHub for newer releases. Choose **Download** to get an update, then confirm installation through Android.
 - **Later:** Dismiss an update to postpone reminders for **five days**, including across restarts.
 - **Check for updates:** Check manually at any time, even during the reminder pause.
@@ -91,15 +110,15 @@ Spotify playlist import depends on an undocumented guest endpoint. Source change
 
 ## Instagram downloads
 
-Open **Download media**, paste an `https://www.instagram.com/reel/.../` or `/p/.../` link, optionally enter a title and category, then select **Download**. Only save media you own or have permission to download.
+Open **Library → Download link**, paste an `https://www.instagram.com/reel/.../` or `/p/.../` link, optionally enter a title and category, then select **Download**. Only save media you own or have permission to download.
 
 Resolution happens directly on your device against Instagram. Pipes strips tracking parameters from the post URL and accepts extracted media only from Instagram/Meta CDN hosts over HTTPS. It does not request your password, import cookies, or use third-party downloader services. Private posts, Stories, photos, and carousels are unsupported. Public posts also fail if Instagram requires login, blocks requests, or omits video metadata; this is best-effort support, not guaranteed access. Downloads remain compressed MP4 video files, including their video data.
 
 ## Privacy & security
 
-These protections describe the **Android 5.0 app**; the separate iOS preview has a different implementation.
+These protections describe the **Android 5.1.55 app**; the separate iOS preview has a different implementation.
 
-- Library, likes, playlists, search history, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
+- Library, likes, playlists, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.
 - Downloads use app-specific storage, without broad storage permissions. Android's system download service manages transfers and may retain download metadata and display titles in notifications. These files are not encrypted by Pipes.
 - Unrecognized media controllers are rejected. Controllers trusted by Android receive limited playback controls; validated car hosts can browse and play saved library entries; only the app's own UID receives Pipes-specific queue/radio commands and arbitrary queue insertion. Android may trust notification listeners you explicitly enable, which can see media metadata.

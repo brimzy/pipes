@@ -197,8 +197,9 @@ class MainActivity : ComponentActivity() {
         var completedPlaybackRequest = 0
         setContent {
             PipesTheme {
+                val tutorial = remember { AppTutorialState(prefs) }
                 val updates = rememberAppUpdates(this@MainActivity)
-                AppUpdateDialog(this@MainActivity, updates)
+                if (!tutorial.showingDialog) AppUpdateDialog(this@MainActivity, updates)
                 var mediaPlayer by remember { mutableStateOf<MediaController?>(null) }
                 val discoveryFeed = remember { com.nazcarbon.music.data.DiscoveryFeed(source) }
                 val exploreFeed = remember { com.nazcarbon.music.data.ExploreFeed(source::searchSongs) }
@@ -554,7 +555,7 @@ class MainActivity : ComponentActivity() {
                     PlaylistStore.save(prefs, updated)
                     playlists = updated
                     discardUnusedArtwork(previous.artworkUri)
-                    notice = if (uri.isBlank()) "Default artwork restored" else "Playlist artwork updated"
+                    notice = if (uri.isBlank()) "Default artwork restored" else "Collection artwork updated"
                     return true
                 }
 
@@ -564,14 +565,20 @@ class MainActivity : ComponentActivity() {
                     discardUnusedArtwork(playlist.artworkUri)
                     selectedPlaylist = null
                     page = "Library"
-                    notice = "Playlist deleted"
+                    notice = "${if (playlist.isAlbum) "Album" else "Playlist"} deleted"
                 }
 
                 suspend fun resolveForPlayback(track: MusicTrack): MusicTrack = withContext(Dispatchers.IO) {
                     source.resolveForPlayback(track)
                 }
 
+                fun openPlayer() {
+                    previousPage = com.nazcarbon.music.data.PlayerNavigation.origin(page, previousPage)
+                    page = "Now playing"
+                }
+
                 fun play(track: MusicTrack, keepQueue: Boolean = false, radio: Boolean = false): Int {
+                    openPlayer()
                     if (!keepQueue) {
                         queueJob?.cancel()
                         queueTracks = listOf(track)
@@ -713,8 +720,7 @@ class MainActivity : ComponentActivity() {
                     queueJob?.cancel()
                     radioSeed = track
                     error = null
-                    if (page != "Now playing") previousPage = page
-                    page = "Now playing"
+                    openPlayer()
                     playJob?.cancel()
                     playbackRequest += 1
                     val activePlayer = mediaPlayer
@@ -904,7 +910,6 @@ class MainActivity : ComponentActivity() {
                     )
                     knownTracks[track.id] = track
                     play(track)
-                    page = "Now playing"
                 }
 
                 fun removeAudioDownload(download: AudioDownload) {
@@ -954,7 +959,6 @@ class MainActivity : ComponentActivity() {
                         val track = MusicTrack(uri.toString(), name, "On this device", 0, "", uri.toString(), uri.toString(), "Original local audio")
                         knownTracks[track.id] = track
                         play(track)
-                        page = "Now playing"
                     }
                 }
 
@@ -979,11 +983,12 @@ class MainActivity : ComponentActivity() {
                     PlayerBackdrop(current?.thumbnailUrl.orEmpty(), Modifier.matchParentSize())
                     Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                         Column(Modifier.weight(1f)) {
-                            AnimatedVisibility(page !in listOf("Now playing", "Settings", "Library"),
+                            AnimatedVisibility(page !in listOf("Now playing", "Settings"),
                                 enter = fadeIn(tween(220)) + expandVertically(tween(280, easing = FastOutSlowInEasing)),
                                 exit = fadeOut(tween(120)) + shrinkVertically(tween(240, easing = FastOutSlowInEasing))) {
                                 Header(query, ::search, page, { openAudio.launch(arrayOf("audio/*")) }, { settingsOrigin = page; page = "Settings" })
                             }
+                            if (tutorial.practicing) TutorialPracticeBar(tutorial, current != null)
                             AnimatedContent(targetState = page, modifier = Modifier.weight(1f),
                                 transitionSpec = {
                                     (fadeIn(tween(260, delayMillis = 50)) + slideInVertically(tween(320, easing = LinearOutSlowInEasing)) { it / 24 })
@@ -1012,7 +1017,7 @@ class MainActivity : ComponentActivity() {
                                     { chooseDownload(current!!) },
                                 )
                             } else when (visiblePage) {
-                                "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }) { RecommendationRegionPicker() }
+                                "Settings" -> AppSettingsScreen(this@MainActivity, updates, { page = settingsOrigin }, tutorial.progress.completed, tutorial::open) { RecommendationRegionPicker() }
                                 "Library" -> Library(
                                     likedIds.mapNotNull { knownTracks[it] },
                                     likedIds,
@@ -1082,7 +1087,7 @@ class MainActivity : ComponentActivity() {
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
-                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying) { previousPage = page; page = "Now playing" }
+                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying, ::openPlayer)
                             }
                             }
                         }
@@ -1108,7 +1113,7 @@ class MainActivity : ComponentActivity() {
                                 current?.let { track ->
                                     CurrentSongBar(track, isPlaying, position, duration, seekable, buffering,
                                         { mediaPlayer?.seekTo(it) },
-                                        { previousPage = page; page = "Now playing" },
+                                        ::openPlayer,
                                         { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } },
                                         ::closePlayback, { skipTrack(-1) }, { skipTrack(1) }, mediaPlayer?.hasNextMediaItem() == true)
                                 }
@@ -1142,6 +1147,25 @@ class MainActivity : ComponentActivity() {
                     tracksToSave, playlists, onDismiss = { tracksToSave = emptyList() }, onChoose = ::addTracksToPlaylist,
                     onCreate = { name, album -> createCollection(name, album, tracksToSave) },
                 )
+                AppTutorial(tutorial) { destination ->
+                    selectedTracks = emptyList()
+                    when (destination) {
+                        TutorialDestination.SEARCH -> search("")
+                        TutorialDestination.PLAYER -> if (current != null) openPlayer() else {
+                            search("")
+                            notice = "Choose a song, or open a local file with the folder button, to try the player."
+                        }
+                        TutorialDestination.QUEUE -> if (current != null) {
+                            previousPage = com.nazcarbon.music.data.PlayerNavigation.origin(page, previousPage)
+                            page = "Up next"
+                        } else {
+                            search("")
+                            notice = "Play a song first, then open Queue in the full player."
+                        }
+                        TutorialDestination.LIBRARY -> page = "Library"
+                        TutorialDestination.SETTINGS -> { if (page != "Settings") settingsOrigin = com.nazcarbon.music.data.PlayerNavigation.origin(page, previousPage); page = "Settings" }
+                    }
+                }
                 if (showCategoryDialog) {
                     CategoryManagerDialog(
                         categories = downloadCategories,
@@ -1310,7 +1334,7 @@ class MainActivity : ComponentActivity() {
                             fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                         IconButton(onClick = onCreatePlaylist) { Icon(Icons.Default.PlaylistAdd, "Create playlist or album", tint = Ink) }
                     }
-                    Text("${tracks.size} liked songs · ${playlists.size} playlists", color = Muted,
+                    Text("${tracks.size} liked songs · ${playlists.count { !it.isAlbum }} playlists · ${playlists.count { it.isAlbum }} albums", color = Muted,
                         fontSize = 12.sp, modifier = Modifier.padding(top = PipesSpace.ArtworkText))
                 }
             }
@@ -1320,7 +1344,7 @@ class MainActivity : ComponentActivity() {
                         FilledTonalButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Panel, contentColor = Ink)) {
                             Icon(Icons.Default.MusicNote, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Download", maxLines = 1)
+                            Text("Download link")
                         }
                         FilledTonalButton(onClick = onManageCategories, modifier = Modifier.weight(1f), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Panel, contentColor = Ink)) {
                             Icon(Icons.Default.FolderOpen, null)
@@ -1365,7 +1389,7 @@ class MainActivity : ComponentActivity() {
                 Text("PLAYLISTS & ALBUMS", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.5.sp, modifier = Modifier.padding(start = 24.dp, top = PipesSpace.Section, bottom = PipesSpace.ArtworkText))
             }
             if (playlists.isEmpty()) item {
-                Text("Create a playlist to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+                Text("Create a playlist or custom album to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
             } else items(playlists, key = { "playlist:${it.name}" }) { playlist ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onOpenPlaylist(playlist) }.padding(horizontal = 24.dp, vertical = 8.dp),
@@ -1554,8 +1578,7 @@ class MainActivity : ComponentActivity() {
             items(playlist.tracks, key = { it.id }) { track ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
-                        TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, onSave,
-                            onRemove = { onRemoveTracks(setOf(track.id)) })
+                        TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, onSave)
                     }
                     IconButton(onClick = { onRemoveTracks(setOf(track.id)) }) {
                         Icon(Icons.Default.Close, "Remove ${track.title} from ${playlist.name}", tint = Muted)

@@ -20,6 +20,8 @@ import com.nazcarbon.music.ui.theme.PipesPalette
     activity: ComponentActivity,
     updates: AppUpdateState,
     onBack: () -> Unit,
+    tutorialCompleted: Boolean,
+    onTutorial: () -> Unit,
     regionPicker: @Composable () -> Unit,
 ) {
     val appVersion = remember {
@@ -34,6 +36,11 @@ import com.nazcarbon.music.ui.theme.PipesPalette
             Text("Settings", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Learn Pipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Seven short lessons on finding music, playback, queues, collections, covers, and downloads. Your place is saved when you close the guide.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedButton(onClick = onTutorial) { Text(if (tutorialCompleted) "Replay tutorial" else "Open tutorial") }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("App updates", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Check for new releases when you open Pipes. Declining an update postpones reminders for five days.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -68,7 +75,7 @@ import com.nazcarbon.music.ui.theme.PipesPalette
             Text("About Pipes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Version $appVersion", style = MaterialTheme.typography.bodyMedium)
             Text("Your music, in motion.", style = MaterialTheme.typography.bodyLarge)
-            Text("Browse record sleeves on Home and in your library. Rotate the player’s vinyl to seek, or use the track buttons to change songs. Public Instagram video downloads, song radio, queues, playlists, and local audio are all here.",
+            Text("Find music on Home, Search, and Explore. Drag the player’s waveform to preview a time, then release to seek. Minimize to keep browsing while music plays. Library holds likes, editable playlists and albums, custom image or GIF covers, and offline downloads.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("Privacy", style = MaterialTheme.typography.titleSmall)
             Text("Your library stays on this device. Online music, artwork, downloads, and update checks contact their providers, which receive your IP address and requests. Pipes has no analytics service.",
