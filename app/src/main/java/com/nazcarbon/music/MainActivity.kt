@@ -74,6 +74,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -114,6 +115,7 @@ import com.nazcarbon.music.data.MusicPlaylist
 import com.nazcarbon.music.data.NewPipeMusicSource
 import com.nazcarbon.music.data.PlaylistStore
 import com.nazcarbon.music.data.PlaylistEdits
+import com.nazcarbon.music.data.PlaylistArtworkFiles
 import com.nazcarbon.music.data.PlaybackQueueRequests
 import com.nazcarbon.music.ui.theme.PipesTheme
 import com.nazcarbon.music.ui.theme.PipesPalette
@@ -121,6 +123,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -243,6 +246,8 @@ class MainActivity : ComponentActivity() {
                 var showCategoryDialog by remember { mutableStateOf(false) }
                 var selectedPlaylist by remember { mutableStateOf<String?>(null) }
                 var showNewPlaylistDialog by remember { mutableStateOf(false) }
+                var artworkTarget by rememberSaveable { mutableStateOf<String?>(null) }
+                var savingArtwork by remember { mutableStateOf(false) }
                 var selectedTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var collectionAdded by remember { mutableStateOf<CollectionAdded?>(null) }
                 var downloadTrack by remember { mutableStateOf<MusicTrack?>(null) }
@@ -430,7 +435,7 @@ class MainActivity : ComponentActivity() {
                             require(imported.isNotEmpty()) { "This Spotify playlist has no playable music tracks." }
                             val playlist = MusicPlaylist(spotifyPlaylist.name, imported, spotifyPlaylist.totalTracks, spotifyPlaylist.skippedItems)
                             val updatedPlaylists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
-                                playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist else it }
+                                playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist.copy(artworkUri = it.artworkUri) else it }
                             } else playlists + playlist
                             withContext(Dispatchers.IO) { PlaylistStore.save(prefs, updatedPlaylists) }
                             Triple(spotifyPlaylist, imported, playlist) to updatedPlaylists
@@ -537,9 +542,26 @@ class MainActivity : ComponentActivity() {
                     notice = "Removed ${ids.size} ${if (ids.size == 1) "song" else "songs"}"
                 }
 
+                fun discardUnusedArtwork(uri: String) {
+                    if (uri.isNotBlank() && playlists.none { it.artworkUri == uri }) lifecycleScope.launch(Dispatchers.IO) {
+                        PlaylistArtworkFiles.remove(playlistArtworkDirectory(this@MainActivity), uri)
+                    }
+                }
+
+                fun setCollectionArtwork(name: String, uri: String): Boolean {
+                    val previous = playlists.firstOrNull { it.name == name } ?: return false
+                    val updated = playlists.map { if (it.name == name) it.copy(artworkUri = uri) else it }
+                    PlaylistStore.save(prefs, updated)
+                    playlists = updated
+                    discardUnusedArtwork(previous.artworkUri)
+                    notice = if (uri.isBlank()) "Default artwork restored" else "Playlist artwork updated"
+                    return true
+                }
+
                 fun removePlaylist(playlist: MusicPlaylist) {
                     playlists = playlists.filterNot { it.name == playlist.name }
                     PlaylistStore.save(prefs, playlists)
+                    discardUnusedArtwork(playlist.artworkUri)
                     selectedPlaylist = null
                     page = "Library"
                     notice = "Playlist deleted"
@@ -898,6 +920,29 @@ class MainActivity : ComponentActivity() {
                     notice = "Download removed"
                 }
 
+                val openPlaylistArtwork = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+                    val target = artworkTarget
+                    artworkTarget = null
+                    if (uri != null && target != null) lifecycleScope.launch {
+                        savingArtwork = true
+                        var imported = ""
+                        try {
+                            withContext(Dispatchers.IO) { imported = importPlaylistArtwork(this@MainActivity, uri) }
+                            if (setCollectionArtwork(target, imported)) imported = ""
+                            else notice = "That playlist is no longer available"
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (failure: Exception) {
+                            error = failure.message ?: "Couldn't save playlist artwork. Try another image or GIF."
+                        } finally {
+                            if (imported.isNotBlank()) withContext(NonCancellable + Dispatchers.IO) {
+                                PlaylistArtworkFiles.remove(playlistArtworkDirectory(this@MainActivity), imported)
+                            }
+                            savingArtwork = false
+                        }
+                    }
+                }
+
                 val openAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                     if (uri != null) {
                         runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -1031,6 +1076,9 @@ class MainActivity : ComponentActivity() {
                                         { chooseTracksForPlaylist(playlist.tracks) },
                                         { ids -> removeCollectionTracks(ids) },
                                         { name, album -> renameCollection(playlist, name, album) },
+                                        savingArtwork,
+                                        { artworkTarget = playlist.name; openPlaylistArtwork.launch(arrayOf("image/*")) },
+                                        { setCollectionArtwork(playlist.name, "") },
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
@@ -1323,9 +1371,7 @@ class MainActivity : ComponentActivity() {
                     Modifier.fillMaxWidth().clickable { onOpenPlaylist(playlist) }.padding(horizontal = 24.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(Raised), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.QueueMusic, null, tint = Ink)
-                    }
+                    PlaylistArtwork(playlist, Modifier.size(56.dp))
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
                         Text(playlist.name, color = PipesPalette.SongTitle, fontWeight = FontWeight.Bold)
@@ -1473,6 +1519,9 @@ class MainActivity : ComponentActivity() {
     onCopy: () -> Unit,
     onRemoveTracks: (Set<String>) -> Unit,
     onRename: (String, Boolean) -> String?,
+    artworkBusy: Boolean,
+    onChooseArtwork: () -> Unit,
+    onRemoveArtwork: () -> Unit,
 ) {
     var editing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -1480,10 +1529,11 @@ class MainActivity : ComponentActivity() {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(playlist.name, color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            IconButton(onClick = { editing = true }) { Icon(Icons.Default.Edit, "Edit collection", tint = Ink) }
-            IconButton(onClick = { deleting = true }) { Icon(Icons.Default.Delete, "Delete collection", tint = Ink) }
+            IconButton(onClick = { editing = true }, enabled = !artworkBusy) { Icon(Icons.Default.Edit, "Edit collection", tint = Ink) }
+            IconButton(onClick = { deleting = true }, enabled = !artworkBusy) { Icon(Icons.Default.Delete, "Delete collection", tint = Ink) }
         }
         Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs · on this device", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
+        PlaylistArtworkEditor(playlist, artworkBusy, onChooseArtwork, onRemoveArtwork)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             TextButton(onClick = { playlist.tracks.firstOrNull()?.let(onPlay) }, enabled = playlist.tracks.isNotEmpty()) { Text("Play all") }
             TextButton(onClick = onCopy, enabled = playlist.tracks.isNotEmpty()) { Text("Add all to…") }

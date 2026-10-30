@@ -15,7 +15,13 @@ object PlaylistStore {
                     songs.optJSONObject(songIndex)?.toMusicTrack()
                 }
                 playlist.optString("name").takeIf(String::isNotBlank)?.let {
-                    MusicPlaylist(it, tracks, playlist.optInt("sourceTotal", 0), playlist.optInt("sourceSkipped", 0), playlist.optBoolean("isAlbum", false))
+                    MusicPlaylist(
+                        name = it, tracks = tracks,
+                        sourceTotal = playlist.optInt("sourceTotal", 0),
+                        sourceSkipped = playlist.optInt("sourceSkipped", 0),
+                        isAlbum = playlist.optBoolean("isAlbum", false),
+                        artworkUri = playlist.optString("artworkUri", ""),
+                    )
                 }
             }
         }.getOrDefault(emptyList())
@@ -35,7 +41,7 @@ object PlaylistStore {
                         .put("page", track.pageUrl),
                 )
             }
-            encoded.put(JSONObject().put("name", playlist.name).put("tracks", songs).put("sourceTotal", playlist.sourceTotal).put("sourceSkipped", playlist.sourceSkipped).put("isAlbum", playlist.isAlbum))
+            encoded.put(JSONObject().put("name", playlist.name).put("tracks", songs).put("sourceTotal", playlist.sourceTotal).put("sourceSkipped", playlist.sourceSkipped).put("isAlbum", playlist.isAlbum).put("artworkUri", playlist.artworkUri))
         }
         preferences.edit().putString(key, encoded.toString()).apply()
     }

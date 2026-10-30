@@ -50,6 +50,7 @@ internal fun CollectionPicker(
             Text("Choose a playlist or album. Songs already inside are skipped.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             collections.forEach { collection ->
                 ListItem(headlineContent = { Text(collection.name) },
+                    leadingContent = { PlaylistArtwork(collection, Modifier.size(48.dp)) },
                     supportingContent = { Text("${if (collection.isAlbum) "Album" else "Playlist"} · ${collection.tracks.size} songs") },
                     modifier = Modifier.clickable { onChoose(collection.name) })
             }

@@ -6,4 +6,5 @@ data class MusicPlaylist(
     val sourceTotal: Int = 0,
     val sourceSkipped: Int = 0,
     val isAlbum: Boolean = false,
+    val artworkUri: String = "",
 )

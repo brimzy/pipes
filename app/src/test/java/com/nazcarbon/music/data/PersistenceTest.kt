@@ -62,6 +62,25 @@ class PersistenceTest {
         assertEquals(MusicPlaylist("Old commute playlist", emptyList()), PlaylistStore.load(preferences(disk)).single())
     }
 
+    @Test fun customArtworkSurvivesRestartRenameAndTrackEditsAndCanBeReset() {
+        val disk = mutableMapOf<String, String>()
+        val track = MusicTrack("a", "Song", "Artist", 10, "art", "temporary-url", "https://example.com/a")
+        val uri = "file:///data/user/0/com.nazcarbon.music/files/playlist-artwork/custom.image"
+        val playlist = MusicPlaylist("My GIF playlist", emptyList(), artworkUri = uri)
+        PlaylistStore.save(preferences(disk), listOf(playlist))
+        val loaded = PlaylistStore.load(preferences(disk)).single()
+        assertEquals(uri, loaded.artworkUri)
+        val edited = PlaylistEdits.remove(PlaylistEdits.add(loaded.copy(name = "Renamed", isAlbum = true), listOf(track)), setOf(track.id))
+        PlaylistStore.save(preferences(disk), listOf(edited))
+        val restored = PlaylistStore.load(preferences(disk)).single()
+        assertEquals(uri, restored.artworkUri)
+        assertEquals("Renamed", restored.name)
+        assertTrue(restored.isAlbum)
+        assertTrue(restored.tracks.isEmpty())
+        PlaylistStore.save(preferences(disk), listOf(restored.copy(artworkUri = "")))
+        assertEquals("", PlaylistStore.load(preferences(disk)).single().artworkUri)
+    }
+
     @Test fun historyRoundTripDeletionAndClearSurviveReload() {
         var history = SearchHistory.add(listOf("older", "Artist"), " artist ")
         assertEquals(listOf("artist", "older"), history)
