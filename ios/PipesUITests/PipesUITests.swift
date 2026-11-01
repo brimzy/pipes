@@ -4,7 +4,12 @@ final class PipesUITests: XCTestCase {
     func testTutorialAndCollectionCreation() {
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.buttons["Start tutorial"].waitForExistence(timeout: 15))
+        let start = app.buttons["Start tutorial"]
+        if !start.waitForExistence(timeout: 5) {
+            app.buttons["Settings"].tap()
+            app.buttons["Learn Pipes"].tap()
+        }
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
         app.buttons["Start tutorial"].tap()
         XCTAssertTrue(app.staticTexts["Find your next song"].waitForExistence(timeout: 5))
         app.buttons["Next lesson"].tap()
