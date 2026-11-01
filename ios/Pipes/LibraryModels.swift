@@ -44,6 +44,10 @@ enum LibraryRules {
     static func playNext(_ track: Track, queue: [Track]) -> [Track] {
         [track] + queue.filter { $0.id != track.id }
     }
+    static func nextTrack(in queue: [Track], shuffle: Bool, forcedID: String?) -> Track? {
+        if let forcedID, let forced = queue.first(where: { $0.id == forcedID }) { return forced }
+        return shuffle ? queue.randomElement() : queue.first
+    }
     static func collectionName(_ value: String) -> String? {
         let name = String(value.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
         return name.isEmpty ? nil : name

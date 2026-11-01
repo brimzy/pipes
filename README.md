@@ -116,7 +116,7 @@ Resolution happens directly on your device against Instagram. Pipes strips track
 
 ## Privacy & security
 
-These protections describe the **Android 5.1.55 app**; the separate iOS preview has a different implementation.
+These protections describe the **Android 5.1.55 app**; the iOS app has a separate implementation.
 
 - Library, likes, playlists, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.

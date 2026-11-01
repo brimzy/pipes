@@ -9,6 +9,11 @@ final class LibraryRulesTests: XCTestCase {
         let c = Track(id: "third", title: "Third", artist: "Artist")
         XCTAssertEqual(LibraryRules.playNext(b, queue: [a, b, c, b]).map(\.id), [b.id, a.id, c.id])
     }
+    func testPlayNextTakesPriorityOverShuffleAndRemovedEntriesAreIgnored() {
+        XCTAssertEqual(LibraryRules.nextTrack(in: [a, b], shuffle: true, forcedID: b.id), b)
+        XCTAssertEqual(LibraryRules.nextTrack(in: [a], shuffle: true, forcedID: b.id), a)
+        XCTAssertNil(LibraryRules.nextTrack(in: [], shuffle: true, forcedID: b.id))
+    }
     func testCollectionCopiesAreIndependentAndArtworkSurvivesEdits() {
         var original = MusicCollection(name: "Saved", tracks: [a], artworkFilename: "cover.gif")
         var copy = original

@@ -31,6 +31,7 @@ final class MusicLibrary: ObservableObject {
     private let player = AVPlayer()
     private var history: [Track] = []
     private var cycle: [Track] = []
+    private var forcedNextID: String?
     private var clock: Any?
     private var ended: NSObjectProtocol?
     private var interruption: NSObjectProtocol?
@@ -177,7 +178,7 @@ final class MusicLibrary: ObservableObject {
     }
     func play(_ track: Track, from songs: [Track]) {
         radioTask?.cancel(); radioSeed = nil; radioLoading = false
-        cycle = []
+        cycle = []; forcedNextID = nil
         let index = songs.firstIndex { $0.id == track.id } ?? 0
         queue = LibraryRules.unique(Array(songs.dropFirst(index + 1))).filter { $0.id != track.id }
         play(track)
@@ -196,7 +197,7 @@ final class MusicLibrary: ObservableObject {
     }
     func stop() {
         pause(); radioTask?.cancel(); radioSeed = nil; radioLoading = false
-        current = nil; queue = []; history = []; cycle = []
+        current = nil; queue = []; history = []; cycle = []; forcedNextID = nil
         player.replaceCurrentItem(with: nil); embeddedPlayer.clear()
         position = 0; duration = 0; updateNowPlaying()
     }
@@ -204,6 +205,7 @@ final class MusicLibrary: ObservableObject {
     func playNext(_ track: Track) {
         guard current != nil else { play(track); return }
         queue = LibraryRules.playNext(track, queue: queue)
+        forcedNextID = track.id
         notice = "Playing next"
     }
     func next() { advance() }
@@ -214,7 +216,9 @@ final class MusicLibrary: ObservableObject {
             queue = LibraryRules.unique(cycle)
             candidates = localOnly ? carPlayable(queue) : queue
         }
-        guard let next = shuffle ? candidates.randomElement() : candidates.first else {
+        let next = LibraryRules.nextTrack(in: candidates, shuffle: shuffle, forcedID: forcedNextID)
+        forcedNextID = nil
+        guard let next else {
             pause(); return
         }
         queue.removeAll { $0.id == next.id }
@@ -273,7 +277,7 @@ final class MusicLibrary: ObservableObject {
     func startRadio(_ track: Track) {
         guard track.videoID != nil else { error = "Radio needs an online song."; return }
         radioTask?.cancel(); radioLoading = false
-        radioSeed = track; radioSeen = [track.id]; queue = []; cycle = []
+        radioSeed = track; radioSeen = [track.id]; queue = []; cycle = []; forcedNextID = nil
         if current?.id != track.id { play(track) }
         fillRadio(track)
     }
