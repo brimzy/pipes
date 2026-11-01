@@ -37,12 +37,18 @@ jobs:
             -destination "platform=iOS Simulator,id=$simulator_id" \
             -derivedDataPath build/simulator -resultBundlePath build/PipesTests.xcresult \
             -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test
+      - name: Export simulator screenshots
+        if: always()
+        continue-on-error: true
+        run: xcrun xcresulttool export attachments --path build/PipesTests.xcresult --output-path build/test-screenshots
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: iphone-test-results
-          path: build/PipesTests.xcresult
+          path: |
+            build/PipesTests.xcresult
+            build/test-screenshots
           if-no-files-found: ignore
       - name: Build iPhone app
         run: >-

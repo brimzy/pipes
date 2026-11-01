@@ -129,6 +129,9 @@ struct SettingsView: View {
             Form {
                 Section("Pipes for iPhone & iPad") {
                     LabeledContent("Version", value: PipesStyle.version)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Pipes version \(PipesStyle.version)")
+                        .accessibilityIdentifier("pipes-version")
                     Button(completed ? "Replay Learn Pipes" : "Learn Pipes", action: onLearn)
                     Link("Check for iPhone updates", destination: URL(string: "https://github.com/brimzy/pipes/releases?q=ios-v5.1")!)
                 }
