@@ -168,6 +168,6 @@ Found a bug? [Open an issue](https://github.com/brimzy/pipes/issues) with your A
 
 ## iPhone / iPad
 
-A first native SwiftUI version is available under [`ios/`](ios/README.md), for **iOS 17+**. Download `Pipes-iOS.ipa` from an `ios-v3.0.*` entry on the [release page](https://github.com/brimzy/pipes/releases). The IPA requires signing with a sideloading tool or installation from Xcode; it cannot install directly from Safari.
+The native SwiftUI app now adapts **Pipes 5.1.55** for **iOS 17+**. Download `Pipes-iOS.ipa` from the newest `ios-v5.1.*` entry on the [release page](https://github.com/brimzy/pipes/releases?q=ios-v5.1). The IPA requires signing with a sideloading tool or installation from Xcode; it cannot install directly from Safari.
 
-This version includes search, embedded online playback, local audio with background playback, likes, and a queue. See the [iOS guide](ios/README.md) for feature differences and build instructions.
+This version includes Home and Explore, song radio, waveform seeking, editable playlists and albums, custom image/GIF covers, bulk selection, direct audio downloads, and the seven-lesson tutorial. See the [iOS guide](ios/README.md) for feature differences and build instructions.

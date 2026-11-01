@@ -7,7 +7,7 @@ settings:
   base:
     SWIFT_VERSION: '5.0'
     TARGETED_DEVICE_FAMILY: '1,2'
-    MARKETING_VERSION: '5.0'
+    MARKETING_VERSION: '5.1.55'
     CURRENT_PROJECT_VERSION: '1'
 targets:
   Pipes:
@@ -24,3 +24,27 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Pipes/Pipes.entitlements
     scheme:
       gatherCoverageData: false
+      testTargets:
+        - PipesTests
+        - PipesUITests
+  PipesTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [PipesTests]
+    dependencies:
+      - target: Pipes
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nazcarbon.music.ios.tests
+        GENERATE_INFOPLIST_FILE: YES
+  PipesUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [PipesUITests]
+    dependencies:
+      - target: Pipes
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nazcarbon.music.ios.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Pipes
