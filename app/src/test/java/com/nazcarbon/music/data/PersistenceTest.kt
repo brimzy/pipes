@@ -81,6 +81,17 @@ class PersistenceTest {
         assertEquals("", PlaylistStore.load(preferences(disk)).single().artworkUri)
     }
 
+    @Test fun downloadSourceIdentitySurvivesRestartAndLegacyDownloadsRemainReadable() {
+        val disk = mutableMapOf<String, String>()
+        val download = AudioDownload(42, "Song", "Artist", "Travel", "audio/mp4", "spotify:track:one")
+        AudioDownloads.save(preferences(disk), listOf(download))
+        assertEquals(listOf(download), AudioDownloads.load(preferences(disk)))
+        disk["audio_downloads"] = """[{"id":1,"title":"Old song","artist":"Artist"}]"""
+        val legacy = AudioDownloads.load(preferences(disk)).single()
+        assertEquals("", legacy.sourceTrackId)
+        assertEquals("Unsorted", legacy.category)
+    }
+
     @Test fun historyRoundTripDeletionAndClearSurviveReload() {
         var history = SearchHistory.add(listOf("older", "Artist"), " artist ")
         assertEquals(listOf("artist", "older"), history)

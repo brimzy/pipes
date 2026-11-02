@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.OfflinePin
+import androidx.compose.material.icons.filled.Downloading
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.media3.session.SessionCommand
@@ -106,6 +109,7 @@ import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.SpotifyPlaylists
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
+import com.nazcarbon.music.data.CollectionSort
 import com.nazcarbon.music.data.AudioDownloads
 import com.nazcarbon.music.data.ArtistDiscography
 import com.nazcarbon.music.data.ArtistRelease
@@ -251,7 +255,10 @@ class MainActivity : ComponentActivity() {
                 var savingArtwork by remember { mutableStateOf(false) }
                 var selectedTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var collectionAdded by remember { mutableStateOf<CollectionAdded?>(null) }
-                var downloadTrack by remember { mutableStateOf<MusicTrack?>(null) }
+                var downloadTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
+                var downloadAlbum by remember { mutableStateOf<String?>(null) }
+                var downloadTitle by remember { mutableStateOf("Download song") }
+                var downloadProgress by remember { mutableStateOf<String?>(null) }
                 LaunchedEffect(page) { selectedTracks = emptyList() }
                 var tracksToSave by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var settingsOrigin by remember { mutableStateOf("Home") }
@@ -284,7 +291,11 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(downloads) {
                     while (true) {
                         downloadStatuses = withContext(Dispatchers.IO) {
-                            downloads.associate { download -> download.id to AudioDownloads.status(downloadManager, download.id) }
+                            downloads.associate { download ->
+                                val status = AudioDownloads.status(downloadManager, download.id)
+                                download.id to if (status?.status == DownloadManager.STATUS_SUCCESSFUL &&
+                                    AudioDownloads.downloadedUri(this@MainActivity, downloadManager, download.id) == null) null else status
+                            }
                         }
                         delay(900)
                     }
@@ -569,7 +580,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 suspend fun resolveForPlayback(track: MusicTrack): MusicTrack = withContext(Dispatchers.IO) {
-                    source.resolveForPlayback(track)
+                    AudioDownloads.resolveForPlayback(this@MainActivity, track) { source.resolveForPlayback(it) }
                 }
 
                 fun openPlayer() {
@@ -824,43 +835,71 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                fun chooseDownload(track: MusicTrack) {
-                    if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://") || track.id.startsWith("download:")) {
-                        notice = "This song is already on your device"
+                fun chooseDownloads(tracks: List<MusicTrack>, title: String, albumName: String? = null) {
+                    if (downloadResolving) return
+                    val online = tracks.distinctBy { it.id }.filterNot {
+                        it.pageUrl.startsWith("content://") || it.pageUrl.startsWith("file://") || it.id.startsWith("download:")
+                    }
+                    if (online.isEmpty()) {
+                        notice = "These songs are already local files."
                         return
                     }
-                    if (downloadResolving) return
                     downloadDialogError = null
-                    downloadTrack = track
+                    downloadProgress = null
+                    downloadTitle = title
+                    downloadAlbum = albumName
+                    downloadTracks = online
                 }
 
-                fun downloadSong(category: String) {
-                    val track = downloadTrack ?: return
-                    if (downloadResolving) return
+                fun chooseDownload(track: MusicTrack) {
+                    val existing = downloads.filter { it.sourceTrackId == track.id }.map { downloadStatuses[it.id]?.status }
+                    when {
+                        DownloadManager.STATUS_SUCCESSFUL in existing -> notice = "Available offline · ${track.title}"
+                        existing.any { it in setOf(DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED) } -> notice = "Download already queued · ${track.title}"
+                        else -> chooseDownloads(listOf(track), "Download song")
+                    }
+                }
+
+                fun downloadSongs(category: String) {
+                    if (downloadResolving || downloadTracks.isEmpty()) return
+                    val tracks = downloadTracks
+                    downloadAlbum?.let { name ->
+                        playlists = PlaylistEdits.downloadAlbum(playlists, name, tracks)
+                        PlaylistStore.save(prefs, playlists)
+                        downloadAlbum = null
+                    }
                     downloadResolving = true
                     downloadDialogError = null
-                    searchScope.launch {
+                    lifecycleScope.launch {
+                        var queued = 0
+                        var skipped = 0
+                        val failures = mutableListOf<MusicTrack>()
                         try {
-                            val existing = withContext(Dispatchers.IO) {
-                                downloads.firstOrNull { it.sourceTrackId == track.id &&
-                                    AudioDownloads.status(downloadManager, it.id)?.status in setOf(DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED, DownloadManager.STATUS_SUCCESSFUL) }
+                            for ((index, track) in tracks.withIndex()) {
+                                downloadProgress = "Preparing ${index + 1} of ${tracks.size} · ${track.title}"
+                                try {
+                                    val existing = withContext(Dispatchers.IO) {
+                                        downloads.any { it.sourceTrackId == track.id &&
+                                            AudioDownloads.isQueuedOrDownloaded(this@MainActivity, downloadManager, it) }
+                                    }
+                                    if (existing) { skipped++; continue }
+                                    val audio = withContext(Dispatchers.IO) { source.resolveForDownload(track) }
+                                    val download = AudioDownloads.enqueueTrack(this@MainActivity, downloadManager, track, audio, category)
+                                    downloads = listOf(download) + downloads
+                                    AudioDownloads.save(prefs, downloads)
+                                    queued++
+                                } catch (cancelled: CancellationException) { throw cancelled }
+                                catch (_: Exception) { failures += track }
                             }
-                            if (existing != null) {
-                                notice = "Already downloaded or queued · ${track.title}"
-                                downloadTrack = null
-                            } else {
-                                val audio = withContext(Dispatchers.IO) { source.resolveForDownload(track) }
-                                val download = AudioDownloads.enqueueTrack(this@MainActivity, downloadManager, track, audio, category)
-                                downloads = listOf(download) + downloads
-                                AudioDownloads.save(prefs, downloads)
-                                downloadTrack = null
-                                notice = "Download started · ${track.title}"
+                            notice = "$queued downloads queued · $skipped already saved or queued" +
+                                if (failures.isEmpty()) "" else " · ${failures.size} couldn't be prepared"
+                            if (failures.isEmpty()) downloadTracks = emptyList()
+                            else {
+                                downloadTracks = failures
+                                downloadDialogError = "${failures.size} songs couldn't be prepared. Retry to try these songs again. Queued downloads continue in the background."
                             }
-                        } catch (cancelled: CancellationException) {
-                            throw cancelled
-                        } catch (failure: Exception) {
-                            downloadDialogError = failure.message ?: "Couldn't prepare this song. Try again."
                         } finally {
+                            downloadProgress = null
                             downloadResolving = false
                         }
                     }
@@ -893,7 +932,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun playDownloaded(download: AudioDownload) {
-                    val uri = downloadManager.getUriForDownloadedFile(download.id)
+                    val uri = AudioDownloads.downloadedUri(this@MainActivity, downloadManager, download.id)
                     if (uri == null) {
                         notice = "This file is not ready yet."
                         return
@@ -913,7 +952,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun removeAudioDownload(download: AudioDownload) {
-                    if (current?.id == "download:${download.id}") {
+                    if (current?.id == "download:${download.id}" || (download.sourceTrackId.isNotBlank() && current?.id == download.sourceTrackId)) {
                         mediaPlayer?.stop()
                         mediaPlayer?.clearMediaItems()
                         current = null
@@ -968,6 +1007,15 @@ class MainActivity : ComponentActivity() {
                 }
                 CompositionLocalProvider(
                     LocalDownloadTrack provides ::chooseDownload,
+                    LocalDownloadStates provides downloads.filter { it.sourceTrackId.isNotBlank() }
+                        .groupBy { it.sourceTrackId }.mapValues { (_, records) ->
+                            val states = records.map { downloadState(downloadStatuses[it.id]?.status) }
+                            when {
+                                DownloadState.SAVED in states -> DownloadState.SAVED
+                                DownloadState.QUEUED in states -> DownloadState.QUEUED
+                                else -> DownloadState.FAILED
+                            }
+                        },
                     LocalTrackSelection provides TrackSelection(selectedTracks) { track ->
                         selectedTracks = if (selectedTracks.any { it.id == track.id }) selectedTracks.filterNot { it.id == track.id } else selectedTracks + track
                     },
@@ -1061,6 +1109,7 @@ class MainActivity : ComponentActivity() {
                                         { chooseTracksForPlaylist(releaseTracks) },
                                         ::choosePlaylist,
                                         { startVibeRadio("${selectedArtist?.artist?.name.orEmpty()} songs") },
+                                        { chooseDownloads(releaseTracks, "Download album", "${selectedArtist?.artist?.name.orEmpty()} · ${release.title}") },
                                     )
                                 }
                                 "Up next" -> UpNext(queueTracks, queueIndex, current, isPlaying, radioSeed, radioLoading, { index ->
@@ -1074,7 +1123,7 @@ class MainActivity : ComponentActivity() {
                                         playlist,
                                         current,
                                         isPlaying,
-                                        { track -> playSequence(track, playlist.tracks) },
+                                        { track, sorted -> playSequence(track, sorted) },
                                         ::startRadio,
                                         ::choosePlaylist,
                                         { removePlaylist(playlist) },
@@ -1084,6 +1133,7 @@ class MainActivity : ComponentActivity() {
                                         savingArtwork,
                                         { artworkTarget = playlist.name; openPlaylistArtwork.launch(arrayOf("image/*")) },
                                         { setCollectionArtwork(playlist.name, "") },
+                                        { chooseDownloads(playlist.tracks, "Download ${if (playlist.isAlbum) "album" else "playlist"}") },
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
@@ -1135,9 +1185,9 @@ class MainActivity : ComponentActivity() {
                         onDownload = ::addAudioDownload,
                     )
                 }
-                downloadTrack?.let { track ->
-                    DownloadTrackDialog(track, downloadCategories, downloadResolving, downloadDialogError,
-                        onDismiss = { if (!downloadResolving) { downloadTrack = null; downloadDialogError = null } }, onDownload = ::downloadSong)
+                if (downloadTracks.isNotEmpty()) {
+                    DownloadTracksDialog(downloadTracks, downloadTitle, downloadCategories, downloadResolving, downloadProgress, downloadDialogError,
+                        onDismiss = { if (!downloadResolving) { downloadTracks = emptyList(); downloadDialogError = null } }, onDownload = ::downloadSongs)
                 }
                 if (showNewPlaylistDialog) CollectionNameDialog(
                     onDismiss = { showNewPlaylistDialog = false },
@@ -1293,6 +1343,8 @@ class MainActivity : ComponentActivity() {
                 Text(track.title, color = if (active) PipesPalette.Cyan else PipesPalette.SongTitle, fontWeight = FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp)
                 Text(track.artist, color = Muted, maxLines = 1, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp).clickable(enabled = onArtist != null && !LocalTrackSelection.current.active) { onArtist?.invoke(track.artist) })
             }
+            val savedState = LocalDownloadStates.current[track.id]
+            if (savedState != null) DownloadStatusIcon(track, Modifier.size(18.dp).padding(end = 2.dp))
             if (active) Icon(Icons.Default.GraphicEq, "Now playing", tint = PipesPalette.Cyan, modifier = Modifier.padding(horizontal = 8.dp).size(20.dp))
             IconButton(onClick = { onLike(track) }, enabled = !LocalTrackSelection.current.active) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Muted, modifier = Modifier.size(20.dp)) }
         }
@@ -1319,12 +1371,24 @@ class MainActivity : ComponentActivity() {
     onCreatePlaylist: () -> Unit,
     onRadio: (MusicTrack) -> Unit,
 ) {
+    val sort = rememberCollectionSort("library")
+    val sortedTracks = remember(tracks, sort.value) { sort.value.tracks(tracks) }
+    val sortedPlaylists = when (sort.value) {
+        CollectionSort.TITLE -> playlists.sortedBy { it.name.lowercase(java.util.Locale.ROOT) }
+        CollectionSort.TITLE_DESC -> playlists.sortedByDescending { it.name.lowercase(java.util.Locale.ROOT) }
+        else -> playlists
+    }
     var selectedCategory by remember { mutableStateOf("All") }
     val categories = listOf("All") + downloadCategories
     LaunchedEffect(categories) {
         if (selectedCategory !in categories) selectedCategory = "All"
     }
-    val visibleDownloads = downloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
+    val sortedDownloads = when (sort.value) {
+        CollectionSort.TITLE -> downloads.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
+        CollectionSort.TITLE_DESC -> downloads.sortedByDescending { it.title.lowercase(java.util.Locale.ROOT) }
+        else -> downloads
+    }
+    val visibleDownloads = sortedDownloads.filter { selectedCategory == "All" || it.category.equals(selectedCategory, ignoreCase = true) }
     Column(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = PipesSpace.Page)) {
             item(key = "library-header") {
@@ -1336,13 +1400,14 @@ class MainActivity : ComponentActivity() {
                     }
                     Text("${tracks.size} liked songs · ${playlists.count { !it.isAlbum }} playlists · ${playlists.count { it.isAlbum }} albums", color = Muted,
                         fontSize = 12.sp, modifier = Modifier.padding(top = PipesSpace.ArtworkText))
+                    CollectionSortButton(sort, listOf(CollectionSort.SAVED, CollectionSort.TITLE, CollectionSort.TITLE_DESC))
                 }
             }
             item(key = "library-tools") {
                 Column {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         FilledTonalButton(onClick = onAddDownload, modifier = Modifier.weight(1f), colors = ButtonDefaults.filledTonalButtonColors(containerColor = Panel, contentColor = Ink)) {
-                            Icon(Icons.Default.MusicNote, null)
+                            Icon(Icons.Default.Download, null)
                             Spacer(Modifier.width(8.dp))
                             Text("Download link")
                         }
@@ -1390,7 +1455,7 @@ class MainActivity : ComponentActivity() {
             }
             if (playlists.isEmpty()) item {
                 Text("Create a playlist or custom album to collect your favorites.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            } else items(playlists, key = { "playlist:${it.name}" }) { playlist ->
+            } else items(sortedPlaylists, key = { "playlist:${it.name}" }) { playlist ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onOpenPlaylist(playlist) }.padding(horizontal = 24.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1409,7 +1474,7 @@ class MainActivity : ComponentActivity() {
             }
             if (tracks.isEmpty()) item {
                 Text("Tap ♡ on a song to save it here.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            } else items(tracks, key = { "liked:${it.id}" }) {
+            } else items(sortedTracks, key = { "liked:${it.id}" }) {
                 TrackRow(it, current?.id == it.id && playing, likedIds.contains(it.id), onPlay, onLike, onRadio, onSave)
             }
         }
@@ -1467,7 +1532,11 @@ class MainActivity : ComponentActivity() {
     Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 7.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(Raised), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.MusicNote, null, tint = Ink)
+                Icon(when {
+                    ready -> Icons.Default.OfflinePin
+                    inProgress -> Icons.Default.Downloading
+                    else -> Icons.Default.ErrorOutline
+                }, if (ready) "Available offline" else if (inProgress) "Downloading" else "Download unavailable", tint = if (ready) Accent else Ink)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -1478,7 +1547,7 @@ class MainActivity : ComponentActivity() {
                         ready -> "Saved for offline listening · ${download.mimeType.substringAfter('/').uppercase()}"
                         inProgress -> status?.progress?.let { "Downloading · ${(it * 100).toInt()}%" } ?: "Downloading…"
                         status?.status == DownloadManager.STATUS_FAILED -> "Download failed · remove and retry"
-                        else -> "Checking download…"
+                        else -> "File unavailable · remove and retry"
                     },
                     color = if (ready) Accent else Muted,
                     fontSize = 11.sp,
@@ -1536,7 +1605,7 @@ class MainActivity : ComponentActivity() {
     playlist: MusicPlaylist,
     current: MusicTrack?,
     playing: Boolean,
-    onPlay: (MusicTrack) -> Unit,
+    onPlay: (MusicTrack, List<MusicTrack>) -> Unit,
     onRadio: (MusicTrack) -> Unit,
     onSave: (MusicTrack) -> Unit,
     onDelete: () -> Unit,
@@ -1546,7 +1615,14 @@ class MainActivity : ComponentActivity() {
     artworkBusy: Boolean,
     onChooseArtwork: () -> Unit,
     onRemoveArtwork: () -> Unit,
+    onDownload: () -> Unit,
 ) {
+    val sort = rememberCollectionSort("playlist:${playlist.name}")
+    var offlineOnly by rememberSaveable(playlist.name) { mutableStateOf(false) }
+    val states = LocalDownloadStates.current
+    val offlineTracks = playlist.tracks.filter { states[it.id] == DownloadState.SAVED || it.pageUrl.startsWith("content://") || it.pageUrl.startsWith("file://") }
+    val sortedTracks = sort.value.tracks(if (offlineOnly) offlineTracks else playlist.tracks)
+    val saved = offlineTracks.size
     var editing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -1556,10 +1632,15 @@ class MainActivity : ComponentActivity() {
             IconButton(onClick = { editing = true }, enabled = !artworkBusy) { Icon(Icons.Default.Edit, "Edit collection", tint = Ink) }
             IconButton(onClick = { deleting = true }, enabled = !artworkBusy) { Icon(Icons.Default.Delete, "Delete collection", tint = Ink) }
         }
-        Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs · on this device", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
+        Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs · $saved available offline", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
         PlaylistArtworkEditor(playlist, artworkBusy, onChooseArtwork, onRemoveArtwork)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
-            TextButton(onClick = { playlist.tracks.firstOrNull()?.let(onPlay) }, enabled = playlist.tracks.isNotEmpty()) { Text("Play all") }
+            TextButton(onClick = { sortedTracks.firstOrNull()?.let { onPlay(it, sortedTracks) } }, enabled = sortedTracks.isNotEmpty()) { Text("Play all") }
+            TextButton(onClick = onDownload, enabled = playlist.tracks.isNotEmpty()) {
+                Icon(Icons.Default.Download, null); Spacer(Modifier.width(6.dp)); Text("Download all")
+            }
+            CollectionSortButton(sort)
+            FilterChip(offlineOnly, { offlineOnly = !offlineOnly }, label = { Text("Downloaded only") })
             TextButton(onClick = onCopy, enabled = playlist.tracks.isNotEmpty()) { Text("Add all to…") }
             val selection = LocalTrackSelection.current
             TextButton(onClick = { playlist.tracks.firstOrNull()?.let(selection.toggle) }, enabled = playlist.tracks.isNotEmpty() && !selection.active) { Text("Select songs") }
@@ -1574,11 +1655,13 @@ class MainActivity : ComponentActivity() {
         }
         if (playlist.tracks.isEmpty()) {
             Text("Add the playing song with +, or choose songs from search or an album. Hold a song to select several.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(PipesSpace.Page))
+        } else if (sortedTracks.isEmpty()) {
+            Text("No downloaded songs yet. Choose Download all to save this collection for offline playback.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
         } else LazyColumn {
-            items(playlist.tracks, key = { it.id }) { track ->
+            items(sortedTracks, key = { it.id }) { track ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) {
-                        TrackRow(track, current?.id == track.id && playing, false, onPlay, {}, onRadio, onSave)
+                        TrackRow(track, current?.id == track.id && playing, false, { onPlay(it, sortedTracks) }, {}, onRadio, onSave)
                     }
                     IconButton(onClick = { onRemoveTracks(setOf(track.id)) }) {
                         Icon(Icons.Default.Close, "Remove ${track.title} from ${playlist.name}", tint = Muted)
@@ -1839,6 +1922,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     onAddRelease: () -> Unit,
     onAddTrack: (MusicTrack) -> Unit,
     onRadio: () -> Unit,
+    onDownload: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1851,6 +1935,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             TextButton(onClick = onPlayAll, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlayArrow, null, tint = Ink); Text("Play release", color = Ink) }
+            TextButton(onClick = onDownload, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.Download, null, tint = Ink); Text("Download album", color = Ink) }
             TextButton(onClick = onAddRelease, enabled = tracks.isNotEmpty()) { Icon(Icons.Default.PlaylistAdd, null, tint = Ink); Text("Add whole release", color = Ink) }
             TextButton(onClick = onRadio) { Icon(Icons.Default.Radio, null, tint = Ink); Text("Artist radio", color = Ink) }
         }
@@ -1958,7 +2043,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                         Icon(Icons.Default.QueueMusic, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
                     }
                     IconButton(onClick = { feedback(onDownload) }) {
-                        Icon(Icons.Default.Download, "Download this song", tint = Ink)
+                        DownloadStatusIcon(track)
                     }
                     IconButton(onClick = { feedback(onSave) }) {
                         Icon(Icons.Default.PlaylistAdd, "Add to playlist or album", tint = Muted, modifier = Modifier.size(24.dp))

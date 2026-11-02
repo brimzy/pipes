@@ -77,7 +77,8 @@ private val tutorialLessons = listOf(
     ), Icons.Default.Image, "Choose a collection", TutorialDestination.LIBRARY),
     TutorialLesson("Take music offline", "Saving to a playlist and downloading are separate actions.", listOf(
         "Download a song" to "Use the download arrow in the full player, mini-player, or song menu, then choose a category. Pipes saves the source's best available downloadable audio; some sources do not offer a usable file.",
-        "Check Library" to "Downloads shows transfer status and completed files. Wait for completion before going offline. Categories organize these files; playlists organize song entries.",
+        "Download a collection" to "Choose Download all in a playlist or custom album, or Download album on an artist release. Choose a category once. Existing downloads are skipped. Wait for completion before going offline.",
+        "Check Library" to "Status icons show queued, saved, and unavailable downloads. Saved songs play offline from their original playlist entries. Downloaded only filters a collection to local songs. Sort changes the displayed and Play all order.",
         "Download a link" to "Library's Download link button accepts direct HTTPS audio files or accessible public Instagram video posts. Paste YouTube and Spotify links into Search instead, then use a song's Download action.",
         "Local files" to "Use the top-bar folder button to open a file already on your device. Local FLAC and WAV keep their original format; downloading an online recording does not make it lossless.",
     ), Icons.Default.Download, "See downloads", TutorialDestination.LIBRARY),

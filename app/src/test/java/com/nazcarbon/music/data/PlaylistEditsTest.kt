@@ -38,4 +38,15 @@ class PlaylistEditsTest {
             assertTrue(runCatching { PlaylistEdits.name(invalid, collections) }.isFailure)
         }
     }
+    @org.junit.Test fun downloadedAlbumKeepsItsOrderAndAvoidsDuplicatesOrNameCollisions() {
+        val song = MusicTrack("one", "Song", "Artist", 180, "art", "temporary-url", "song")
+        val original = listOf(MusicPlaylist("Artist · Album", emptyList()))
+        val updated = PlaylistEdits.downloadAlbum(original, "Artist · Album", listOf(song, song))
+        org.junit.Assert.assertEquals(original.first(), updated.first())
+        val album = updated.last()
+        org.junit.Assert.assertEquals("Artist · Album (2)", album.name)
+        org.junit.Assert.assertTrue(album.isAlbum)
+        org.junit.Assert.assertEquals(listOf(song.copy(streamUrl = "")), album.tracks)
+        org.junit.Assert.assertEquals(updated, PlaylistEdits.downloadAlbum(updated, "Artist · Album", listOf(song)))
+    }
 }

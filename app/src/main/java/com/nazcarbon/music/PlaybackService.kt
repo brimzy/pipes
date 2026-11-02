@@ -26,6 +26,7 @@ import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CancellationException
+import com.nazcarbon.music.data.AudioDownloads
 import com.nazcarbon.music.data.MusicTrack
 import com.nazcarbon.music.data.NewPipeMusicSource
 import kotlinx.coroutines.CoroutineScope
@@ -256,11 +257,11 @@ class PlaybackService : MediaLibraryService() {
                 val extras = item.mediaMetadata.extras
                 val page = extras?.getString("pipes_page_url") ?: item.mediaId
                 val refreshed = withContext(Dispatchers.IO) {
-                    radioSource!!.resolveForPlayback(MusicTrack(item.mediaId,
+                    AudioDownloads.resolveForPlayback(this@PlaybackService, MusicTrack(item.mediaId,
                         item.mediaMetadata.title?.toString().orEmpty(),
                         item.mediaMetadata.artist?.toString().orEmpty(),
                         extras?.getLong("pipes_duration") ?: 0L,
-                        item.mediaMetadata.artworkUri?.toString().orEmpty(), "", page), forceRefresh = true)
+                        item.mediaMetadata.artworkUri?.toString().orEmpty(), "", page)) { radioSource!!.resolveForPlayback(it, forceRefresh = true) }
                 }
                 if (player.currentMediaItem != item) return@launch
                 val position = player.currentPosition
@@ -322,7 +323,7 @@ class PlaybackService : MediaLibraryService() {
                     examined += batch.size
                     val resolved = coroutineScope {
                         batch.map { track -> async(Dispatchers.IO) {
-                            try { retryPlaybackRequest { source.resolveForPlayback(track) } }
+                            try { retryPlaybackRequest { AudioDownloads.resolveForPlayback(this@PlaybackService, track) { source.resolveForPlayback(it) } } }
                             catch (cancelled: CancellationException) { throw cancelled }
                             catch (_: Exception) { null }
                         } }.awaitAll()

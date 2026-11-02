@@ -153,7 +153,7 @@ internal open class CarMediaLibrary(
                 val entry = if (!query.isNullOrBlank() && query.length <= 200) library.search(query).firstOrNull() else library.find(selected.mediaId)
                 entry ?: error("This recording is not in your saved library.")
             }
-            val resolved = withContext(Dispatchers.IO) { withTimeout(30_000) { source.resolveForPlayback(selection.track) } }
+            val resolved = withContext(Dispatchers.IO) { withTimeout(30_000) { AudioDownloads.resolveForPlayback(context, selection.track) { source.resolveForPlayback(it) } } }
             check(request == selectionGeneration) { "Playback selection changed." }
             val token = UUID.randomUUID().toString()
             prepareQueue(token, selection.following)

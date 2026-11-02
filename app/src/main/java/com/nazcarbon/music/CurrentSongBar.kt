@@ -59,7 +59,7 @@ internal fun CurrentSongBar(
             }
             val download = LocalDownloadTrack.current
             IconButton(onClick = { download(track) }, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Download, "Download this song", tint = P.TextSoft, modifier = Modifier.size(20.dp))
+                DownloadStatusIcon(track, Modifier.size(20.dp))
             }
             IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Close, "Stop playback and close player", tint = P.TextSoft, modifier = Modifier.size(18.dp))

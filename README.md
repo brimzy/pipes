@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 5.1.55 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  <strong>Pipes 5.1.57 — a music player with artwork discovery, song radio, and local audio.</strong><br />
   Monochrome charcoal surfaces. An artwork atmosphere that follows your music. Neutral text and small color accents for active controls. Your library, queue, and playback in one place.
 </p>
 
@@ -73,7 +73,7 @@ Each lesson has a **Try…** button that opens the relevant part of the real app
 | **Your library** | Save liked songs, create and edit named playlists or custom albums, bulk-add music, and revisit recent searches. |
 | **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
-| **Offline downloads** | Download the playing song, direct HTTPS audio files, or accessible public Instagram videos; organize downloads into categories. |
+| **Offline downloads** | Download songs, whole playlists or albums, direct HTTPS audio files, or accessible public Instagram videos; organize downloads into categories. |
 
 Swipe a song right to add it to the queue or left to remove an upcoming queue entry. In a collection, use the visible remove button or bulk **Remove** to remove saved songs. Cross the threshold and release to commit; hold a song to select it, then tap more songs and choose **Add to…** to save them together. Use the three-dot menu for Play next, radio, playlist, like, download, and queue actions. Play next moves an upcoming song forward or inserts a new one immediately after the current song, including during shuffle. Screen readers expose the same actions.
 
@@ -104,7 +104,9 @@ Updates preserve your saved data. APKs are checked against the release checksum 
 
 Online playback uses YouTube Music recordings. Spotify links provide song and playlist metadata; playable matches come from YouTube Music.
 
-YouTube audio is compressed. Local FLAC and WAV files retain their original format. The player’s **Download** button saves the best available progressive audio for the playing song into a chosen offline category. It recognizes local files and already queued or completed downloads. The link downloader also accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links in the manual link form. To download a YouTube Music recording, use the player or song-menu Download action; availability depends on the source.
+YouTube audio is compressed. Local FLAC and WAV files retain their original format. Open a playlist or custom album and choose **Download all**, or use **Download album** on an artist release. Completed downloads play from the original song entries in your library, queues, and Android Auto. **Downloaded only** in a collection filters to local songs; sort by saved order, title, artist, or duration, and **Play all** follows that order. Library also sorts likes, downloads, and collection names by title. Sort choices survive restarts. Status icons distinguish queued, saved, and unavailable downloads. Missing files can be downloaded again.
+
+The player’s **Download** button saves the best available progressive audio for the playing song into a chosen offline category. It recognizes local files and already queued or completed downloads. The link downloader also accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links in the manual link form. To download a YouTube Music recording, use the player or song-menu Download action; availability depends on the source.
 
 Spotify playlist import depends on an undocumented guest endpoint. Source changes can affect importing or playback. The main waveform keeps its original silhouette while bass, midrange and treble frequencies animate its bars. Stereo FFT analysis provides fast attacks and smooth decay; pause, silence and scrubbing restore the exact original seek pattern.
 
@@ -116,7 +118,7 @@ Resolution happens directly on your device against Instagram. Pipes strips track
 
 ## Privacy & security
 
-These protections describe the **Android 5.1.55 app**; the iOS app has a separate implementation.
+These protections describe the **Android 5.1.57 app**; the iOS app has a separate implementation.
 
 - Library, likes, playlists, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.

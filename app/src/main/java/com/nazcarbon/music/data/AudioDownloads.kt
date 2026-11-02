@@ -183,6 +183,28 @@ object AudioDownloads {
         return listOf(DEFAULT_CATEGORY) + clean.filterNot { it.equals(DEFAULT_CATEGORY, ignoreCase = true) }
     }
 
+    /** A successful transfer may outlive its file. Verify readability before reusing it. */
+    fun downloadedUri(context: Context, manager: DownloadManager, id: Long): Uri? = runCatching {
+        val uri = manager.getUriForDownloadedFile(id) ?: return null
+        context.contentResolver.openFileDescriptor(uri, "r")?.use { uri }
+    }.getOrNull()
+
+    fun resolveForPlayback(context: Context, track: MusicTrack, online: (MusicTrack) -> MusicTrack): MusicTrack {
+        val manager = context.getSystemService(DownloadManager::class.java)
+        val downloads = load(context.getSharedPreferences("pipes", Context.MODE_PRIVATE))
+        return OfflinePlayback.resolve(track, { sourceId ->
+            downloads.asSequence().filter { sourceId.isNotBlank() && it.sourceTrackId == sourceId }
+                .mapNotNull { downloadedUri(context, manager, it.id)?.toString() }.firstOrNull()
+        }, online)
+    }
+
+    fun isQueuedOrDownloaded(context: Context, manager: DownloadManager, download: AudioDownload): Boolean =
+        when (status(manager, download.id)?.status) {
+            DownloadManager.STATUS_PENDING, DownloadManager.STATUS_RUNNING, DownloadManager.STATUS_PAUSED -> true
+            DownloadManager.STATUS_SUCCESSFUL -> downloadedUri(context, manager, download.id) != null
+            else -> false
+        }
+
     fun status(manager: DownloadManager, id: Long): AudioDownloadStatus? = runCatching {
         manager.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
             if (!cursor.moveToFirst()) return@use null

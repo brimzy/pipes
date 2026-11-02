@@ -89,7 +89,7 @@ import kotlin.math.roundToInt
             Text(track.artist, color = P.TextSoft, modifier = Modifier.padding(top = 8.dp, bottom = 16.dp))
             listOf<Pair<String, () -> Unit>>("Play next" to { playNext(track) }, "Add to queue →" to onAdd, "← Remove from queue" to onRemove,
                 "Start song radio" to onRadio, "Add to playlist or album" to onSave,
-                "Select songs" to { selection.toggle(track) }, "Download song" to { download(track) }).plus(
+                "Select songs" to { selection.toggle(track) }, trackDownloadState(track).label to { download(track) }).plus(
                 listOfNotNull(onLike?.let { "Like / unlike song" to it }, onSpotify?.let { "Search on Spotify" to it })
             ).forEach { (label, action) ->
                 TextButton(onClick = { actions = false; action() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label, modifier = Modifier.fillMaxWidth(), color = P.Text) }

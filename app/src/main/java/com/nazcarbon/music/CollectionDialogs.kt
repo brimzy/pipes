@@ -61,18 +61,19 @@ internal fun CollectionPicker(
 }
 
 @Composable
-internal fun DownloadTrackDialog(track: MusicTrack, categories: List<String>, busy: Boolean, error: String?, onDismiss: () -> Unit, onDownload: (String) -> Unit) {
-    var category by remember(track.id) { mutableStateOf(categories.firstOrNull() ?: "Unsorted") }
+internal fun DownloadTracksDialog(tracks: List<MusicTrack>, title: String, categories: List<String>, busy: Boolean, progress: String?, error: String?, onDismiss: () -> Unit, onDownload: (String) -> Unit) {
+    var category by remember { mutableStateOf(categories.firstOrNull() ?: "Unsorted") }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() },
-        title = { Text("Download song") },
+        title = { Text(title) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(track.title, style = MaterialTheme.typography.titleMedium)
-            Text(track.artist)
-            Text("Save the best available audio for offline playback.")
+            Text(if (tracks.size == 1) tracks.first().title else "${tracks.size} songs", style = MaterialTheme.typography.titleMedium)
+            if (tracks.size == 1) Text(tracks.first().artist)
+            Text("Save compressed audio for offline playback. No extra conversion. Songs already downloaded or queued are skipped.")
+            if (progress != null) Text(progress)
             Text("Category", style = MaterialTheme.typography.labelLarge)
             categories.forEach { name -> FilterChip(category == name, { if (!busy) category = name }, label = { Text(name) }, enabled = !busy) }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         } },
-        confirmButton = { TextButton(onClick = { onDownload(category) }, enabled = !busy) { Text(if (busy) "Preparing…" else "Download") } },
+        confirmButton = { TextButton(onClick = { onDownload(category) }, enabled = !busy) { Text(if (busy) "Preparing…" else if (error != null) "Retry" else "Download") } },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Cancel") } })
 }

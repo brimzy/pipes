@@ -15,6 +15,17 @@ object PlaylistEdits {
         return collection.copy(tracks = collection.tracks + tracks.filter { ids.add(it.id) }.map { it.copy(streamUrl = "") })
     }
 
+    /** Downloading a source album also keeps its track list available without the source page. */
+    fun downloadAlbum(collections: List<MusicPlaylist>, title: String, tracks: List<MusicTrack>): List<MusicPlaylist> {
+        val ids = tracks.map { it.id }.distinct()
+        if (ids.isEmpty() || collections.any { it.isAlbum && it.tracks.map { track -> track.id }.distinct() == ids }) return collections
+        val base = title.trim().ifBlank { "Downloaded album" }.take(70)
+        var name = base
+        var suffix = 2
+        while (collections.any { it.name.equals(name, ignoreCase = true) }) name = "$base (${suffix++})"
+        return collections + add(MusicPlaylist(name, emptyList(), isAlbum = true), tracks)
+    }
+
     fun remove(collection: MusicPlaylist, ids: Set<String>): MusicPlaylist =
         collection.copy(tracks = collection.tracks.filterNot { it.id in ids })
 }
