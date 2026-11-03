@@ -98,6 +98,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -107,6 +109,9 @@ import com.nazcarbon.music.data.SongSearch
 import com.nazcarbon.music.data.YouTubeLinks
 import com.nazcarbon.music.data.SpotifyLinks
 import com.nazcarbon.music.data.SpotifyPlaylists
+import com.nazcarbon.music.data.SpotifyPlaylistUpdates
+import com.nazcarbon.music.data.SpotifyPlaylistSync
+import com.nazcarbon.music.data.LibrarySongSearch
 import com.nazcarbon.music.data.AudioDownload
 import com.nazcarbon.music.data.AudioDownloadStatus
 import com.nazcarbon.music.data.CollectionSort
@@ -276,6 +281,25 @@ class MainActivity : ComponentActivity() {
                 var radioLoading by remember { mutableStateOf(false) }
                 var radioSeed by remember { mutableStateOf<MusicTrack?>(null) }
                 var notice by remember { mutableStateOf<String?>(null) }
+                val spotifySync = remember {
+                    SpotifyPlaylistSync(read = { playlists }, write = { updated ->
+                        PlaylistStore.save(prefs, updated)
+                        playlists = updated
+                        updated.flatMap { it.tracks }.forEach { knownTracks[it.id] = it }
+                    })
+                }
+                var spotifyRefreshing by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        while (true) {
+                            spotifySync.refresh()
+                            delay(SpotifyPlaylistSync.INTERVAL_MS)
+                        }
+                    }
+                }
+                val visibleSearchResults = remember(query, playlists, results) {
+                    LibrarySongSearch.merge(query, playlists, results)
+                }
                 var downloadDialogError by remember { mutableStateOf<String?>(null) }
                 var downloadResolving by remember { mutableStateOf(false) }
 
@@ -426,40 +450,28 @@ class MainActivity : ComponentActivity() {
                     searchError = null
                     importJob = lifecycleScope.launch {
                         runCatching {
-                            val spotifyPlaylist = SpotifyPlaylists.load(text) { completed, total ->
+                            val spotifyPlaylist = SpotifyPlaylists.load(text, forceRefresh = true) { completed, total ->
                                 runOnUiThread {
                                     if (generation == importGeneration && importJob?.isActive == true) {
                                         importProgress = "Reading playlist · $completed / $total items"
                                     }
                                 }
                             }
-                            val imported = spotifyPlaylist.tracks.mapIndexed { position, spotifyTrack ->
-                                MusicTrack(
-                                    id = "spotify:${spotifyTrack.id}:${spotifyTrack.position.takeIf { it >= 0 } ?: position}",
-                                    title = spotifyTrack.title,
-                                    artist = spotifyTrack.artist,
-                                    durationSeconds = spotifyTrack.durationSeconds,
-                                    thumbnailUrl = spotifyTrack.thumbnailUrl,
-                                    streamUrl = "",
-                                    pageUrl = "spotify-search:${spotifyTrack.id}",
-                                )
-                            }
-                            require(imported.isNotEmpty()) { "This Spotify playlist has no playable music tracks." }
-                            val playlist = MusicPlaylist(spotifyPlaylist.name, imported, spotifyPlaylist.totalTracks, spotifyPlaylist.skippedItems)
-                            val updatedPlaylists = if (playlists.any { it.name.equals(playlist.name, ignoreCase = true) }) {
-                                playlists.map { if (it.name.equals(playlist.name, ignoreCase = true)) playlist.copy(artworkUri = it.artworkUri) else it }
+                            val id = SpotifyPlaylists.playlistId(text)
+                            val playlist = SpotifyPlaylistUpdates.import(playlists, id, spotifyPlaylist, System.currentTimeMillis())
+                            val updated = if (playlists.any { it.name == playlist.name }) {
+                                playlists.map { if (it.name == playlist.name) playlist else it }
                             } else playlists + playlist
-                            withContext(Dispatchers.IO) { PlaylistStore.save(prefs, updatedPlaylists) }
-                            Triple(spotifyPlaylist, imported, playlist) to updatedPlaylists
-                        }.onSuccess { (result, updatedPlaylists) ->
-                            val (spotifyPlaylist, imported, playlist) = result
-                            imported.forEach { knownTracks[it.id] = it }
-                            playlists = updatedPlaylists
+                            PlaylistStore.save(prefs, updated)
+                            playlists = updated
+                            playlist.tracks.forEach { knownTracks[it.id] = it }
+                            playlist to spotifyPlaylist
+                        }.onSuccess { (playlist, spotifyPlaylist) ->
                             selectedPlaylist = playlist.name
                             page = "Playlist"
                             notice = if (spotifyPlaylist.skippedItems > 0) {
-                                "Imported ${imported.size} songs · ${spotifyPlaylist.skippedItems} unavailable or non-music items skipped"
-                            } else "Imported ${imported.size} Spotify songs"
+                                "Synced ${spotifyPlaylist.tracks.size} songs · ${spotifyPlaylist.skippedItems} unavailable or non-music items skipped"
+                            } else "Synced ${spotifyPlaylist.tracks.size} Spotify songs"
                         }.onFailure { failure ->
                             if (failure is CancellationException) throw failure
                             searchError = failure.message ?: "Couldn't import this Spotify playlist."
@@ -1088,7 +1100,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 "Search" -> if (query.isBlank()) SearchHistoryPanel(searchHistory, ::search,
                                     { value -> saveHistory(searchHistory.filterNot { it == value }) }, { saveHistory(emptyList()) })
-                                else SearchResults(query, results, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, results) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) }, loadingMessage = importProgress)
+                                else SearchResults(query, visibleSearchResults, loading, searchError, current, isPlaying, likedIds, { track -> playSequence(track, visibleSearchResults) }, ::toggleLike, ::startRadio, ::choosePlaylist, ::openOnSpotify, ::findArtists, { search(query) }, loadingMessage = importProgress)
                                 "Artist Search" -> ArtistSearchResults(artistQuery, artistResults, artistLoading, artistError, { findArtists(artistQuery) }, ::openArtist)
                                 "Artist" -> ArtistDiscographyScreen(
                                     selectedArtist,
@@ -1134,6 +1146,16 @@ class MainActivity : ComponentActivity() {
                                         { artworkTarget = playlist.name; openPlaylistArtwork.launch(arrayOf("image/*")) },
                                         { setCollectionArtwork(playlist.name, "") },
                                         { chooseDownloads(playlist.tracks, "Download ${if (playlist.isAlbum) "album" else "playlist"}") },
+                                        spotifyRefreshing,
+                                        {
+                                            searchScope.launch {
+                                                spotifyRefreshing = true
+                                                try {
+                                                    val failures = spotifySync.refresh(playlist.spotifyPlaylistId, force = true)
+                                                    notice = failures[playlist.spotifyPlaylistId] ?: "Spotify playlist updated"
+                                                } finally { spotifyRefreshing = false }
+                                            }
+                                        },
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
@@ -1144,7 +1166,7 @@ class MainActivity : ComponentActivity() {
                         AnimatedVisibility(selectedTracks.isNotEmpty()) {
                             SelectionBar(selectedTracks.size, onAll = {
                                 val visible = when (page) {
-                                    "Search" -> results
+                                    "Search" -> visibleSearchResults
                                     "Playlist" -> playlists.firstOrNull { it.name == selectedPlaylist }?.tracks.orEmpty()
                                     "Release" -> releaseTracks
                                     "Library" -> likedIds.mapNotNull { knownTracks[it] }
@@ -1315,11 +1337,11 @@ class MainActivity : ComponentActivity() {
             Text(if (query.isBlank()) "Browse artist discography" else "Artist discography · $query", color = Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         when {
-            loading -> Column(Modifier.align(Alignment.CenterHorizontally).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            loading && tracks.isEmpty() -> Column(Modifier.align(Alignment.CenterHorizontally).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 PipesLoading()
                 loadingMessage?.let { Text(it, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 12.dp)) }
             }
-            error != null -> Column(Modifier.padding(PipesSpace.Page)) {
+            error != null && tracks.isEmpty() -> Column(Modifier.padding(PipesSpace.Page)) {
                 Text(error, color = Muted)
                 TextButton(onClick = onRetry) { Text("Retry search") }
             }
@@ -1616,6 +1638,8 @@ class MainActivity : ComponentActivity() {
     onChooseArtwork: () -> Unit,
     onRemoveArtwork: () -> Unit,
     onDownload: () -> Unit,
+    spotifyRefreshing: Boolean,
+    onRefreshSpotify: () -> Unit,
 ) {
     val sort = rememberCollectionSort("playlist:${playlist.name}")
     var offlineOnly by rememberSaveable(playlist.name) { mutableStateOf(false) }
@@ -1633,6 +1657,14 @@ class MainActivity : ComponentActivity() {
             IconButton(onClick = { deleting = true }, enabled = !artworkBusy) { Icon(Icons.Default.Delete, "Delete collection", tint = Ink) }
         }
         Text("${if (playlist.isAlbum) "Album" else "Playlist"} · ${playlist.tracks.size} songs · $saved available offline", color = Muted, modifier = Modifier.padding(horizontal = 24.dp))
+        if (playlist.spotifyPlaylistId.isNotBlank()) {
+            Row(Modifier.padding(start = 24.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Spotify · syncs automatically", color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                TextButton(onClick = onRefreshSpotify, enabled = !spotifyRefreshing) {
+                    Text(if (spotifyRefreshing) "Refreshing…" else "Refresh now")
+                }
+            }
+        }
         PlaylistArtworkEditor(playlist, artworkBusy, onChooseArtwork, onRemoveArtwork)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp)) {
             TextButton(onClick = { sortedTracks.firstOrNull()?.let { onPlay(it, sortedTracks) } }, enabled = sortedTracks.isNotEmpty()) { Text("Play all") }

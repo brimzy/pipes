@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 5.1.57 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  <strong>Pipes 5.1.58 — a music player with artwork discovery, song radio, and local audio.</strong><br />
   Monochrome charcoal surfaces. An artwork atmosphere that follows your music. Neutral text and small color accents for active controls. Your library, queue, and playback in one place.
 </p>
 
@@ -71,6 +71,7 @@ Each lesson has a **Try…** button that opens the relevant part of the real app
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
 | **Learn Pipes** | Seven resumable lessons, silent navigation and waveform practice, and shortcuts into the actual app. |
 | **Your library** | Save liked songs, create and edit named playlists or custom albums, bulk-add music, and revisit recent searches. |
+| **Spotify playlist sync** | Imported public playlists refresh when Pipes is open or resumed, with a manual Refresh now action. New songs also appear in Search. |
 | **Search links** | Paste YouTube videos, playlists and radio mixes, or Spotify songs and public playlists directly into search. |
 | **Local audio** | Open files including FLAC and WAV in their original format. |
 | **Offline downloads** | Download songs, whole playlists or albums, direct HTTPS audio files, or accessible public Instagram videos; organize downloads into categories. |
@@ -104,6 +105,8 @@ Updates preserve your saved data. APKs are checked against the release checksum 
 
 Online playback uses YouTube Music recordings. Spotify links provide song and playlist metadata; playable matches come from YouTube Music.
 
+Public Spotify playlists imported into Pipes keep their source link. Pipes checks them about once a minute while open and checks again when you return, subject to the same interval. Choose **Refresh now** in the playlist for an immediate check. Spotify additions, removals and order are mirrored; your Pipes collection name, artwork and separately added songs stay saved. Refresh failures keep the last saved list for offline browsing. Saved playlist songs appear in Search alongside online results. Playlists imported before 5.1.58 need their Spotify link pasted into Search once more to enable sync; matching old imports are reconnected by name. Keep the original name for that first reconnect.
+
 YouTube audio is compressed. Local FLAC and WAV files retain their original format. Open a playlist or custom album and choose **Download all**, or use **Download album** on an artist release. Completed downloads play from the original song entries in your library, queues, and Android Auto. **Downloaded only** in a collection filters to local songs; sort by saved order, title, artist, or duration, and **Play all** follows that order. Library also sorts likes, downloads, and collection names by title. Sort choices survive restarts. Status icons distinguish queued, saved, and unavailable downloads. Missing files can be downloaded again.
 
 The player’s **Download** button saves the best available progressive audio for the playing song into a chosen offline category. It recognizes local files and already queued or completed downloads. The link downloader also accepts **direct HTTPS audio-file URLs** and **public Instagram Reel/video post links**. Instagram videos are saved as MP4; Pipes plays their audio. It does not extract lossless audio from video, download Spotify streams, or accept YouTube watch links in the manual link form. To download a YouTube Music recording, use the player or song-menu Download action; availability depends on the source.
@@ -118,7 +121,7 @@ Resolution happens directly on your device against Instagram. Pipes strips track
 
 ## Privacy & security
 
-These protections describe the **Android 5.1.57 app**; the iOS app has a separate implementation.
+These protections describe the **Android 5.1.58 app**; the iOS app has a separate implementation.
 
 - Library, likes, playlists, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.

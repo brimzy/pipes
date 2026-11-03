@@ -35,8 +35,8 @@ internal object SpotifyGuestPlaylist {
         val revision: String, val rowIds: List<String>, val tracks: List<SpotifyPlaylistTrack>, val skipped: Int)
     private class SessionChanged : IllegalStateException("Spotify's guest session changed. Retry the import.")
 
-    suspend fun load(id: String, progress: (Int, Int) -> Unit = { _, _ -> }): SpotifyPlaylistPreview {
-        synchronized(lock) {
+    suspend fun load(id: String, forceRefresh: Boolean = false, progress: (Int, Int) -> Unit = { _, _ -> }): SpotifyPlaylistPreview {
+        if (!forceRefresh) synchronized(lock) {
             playlists[id]?.takeIf { System.currentTimeMillis() - it.first < 5 * 60 * 1000 }?.let {
                 progress(it.second.totalTracks, it.second.totalTracks)
                 return it.second

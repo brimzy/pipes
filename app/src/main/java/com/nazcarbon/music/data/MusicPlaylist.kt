@@ -7,4 +7,7 @@ data class MusicPlaylist(
     val sourceSkipped: Int = 0,
     val isAlbum: Boolean = false,
     val artworkUri: String = "",
+    val spotifyPlaylistId: String = "",
+    val spotifyTrackIds: List<String> = emptyList(),
+    val lastSpotifySync: Long = 0,
 )

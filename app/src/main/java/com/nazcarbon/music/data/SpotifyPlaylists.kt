@@ -24,8 +24,8 @@ object SpotifyPlaylists {
             uri.path.orEmpty().split('/').contains("playlist")
     }
 
-    suspend fun load(value: String, progress: (Int, Int) -> Unit = { _, _ -> }): SpotifyPlaylistPreview =
-        SpotifyGuestPlaylist.load(playlistId(value), progress)
+    suspend fun load(value: String, forceRefresh: Boolean = false, progress: (Int, Int) -> Unit = { _, _ -> }): SpotifyPlaylistPreview =
+        SpotifyGuestPlaylist.load(playlistId(value), forceRefresh, progress)
 
     internal fun parseEmbed(html: String, total: Int): SpotifyPlaylistPreview {
         val payload = Regex("<script[^>]*id=\"__NEXT_DATA__\"[^>]*>(.*?)</script>", RegexOption.DOT_MATCHES_ALL)
