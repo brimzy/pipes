@@ -1,7 +1,6 @@
 import SwiftUI
 import WebKit
 
-/// One web player is retained while moving between the full and compact player.
 @MainActor
 final class EmbeddedPlayer: NSObject, WKScriptMessageHandler {
     private weak var library: MusicLibrary?
@@ -13,7 +12,6 @@ final class EmbeddedPlayer: NSObject, WKScriptMessageHandler {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
-        // The controller owns this proxy, rather than creating a controller/self retain cycle.
         configuration.userContentController.add(WeakMessageHandler(self), name: "pipes")
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.isOpaque = false; webView.backgroundColor = .black

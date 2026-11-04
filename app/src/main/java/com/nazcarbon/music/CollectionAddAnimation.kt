@@ -23,7 +23,6 @@ import kotlin.math.sin
 
 internal data class CollectionAdded(val tracks: List<MusicTrack>, val name: String, val token: Long = System.nanoTime())
 
-/** A left-facing Kirby GIF inhales the cover stack. Saving is complete before this feedback begins. */
 @Composable
 internal fun CollectionAddAnimation(event: CollectionAdded?, onFinished: () -> Unit, modifier: Modifier = Modifier) {
     if (event == null) return
@@ -40,7 +39,6 @@ internal fun CollectionAddAnimation(event: CollectionAdded?, onFinished: () -> U
             val widthPx = with(density) { maxWidth.toPx() }
             val unit = with(density) { 1.dp.toPx() }
             val t = progress.value
-            // The 200x165 GIF is mirrored: its mouth sits at (130, 100).
             val mouthX = widthPx - (8 + 160 * .35f) * unit
             val mouthY = (32 + 132 * (100f / 165f)) * unit
             event.tracks.take(3).reversed().forEachIndexed { index, track ->

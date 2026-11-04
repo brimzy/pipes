@@ -2,7 +2,6 @@ package com.nazcarbon.music
 
 import kotlin.math.*
 
-/** Hann-windowed stereo power spectrum. Audio never leaves the playback process. */
 internal class MusicSpectrum(private val sampleRate: Int) {
     private val count = 2048
     private val left = FloatArray(count)
@@ -16,7 +15,6 @@ internal class MusicSpectrum(private val sampleRate: Int) {
     private var filled = 0
     private var hop = 0
 
-    /** Returns true every ~21ms at 48kHz, after the first complete analysis window. */
     fun accept(l: Float, r: Float = l): Boolean {
         left[cursor] = l
         right[cursor] = r
@@ -36,7 +34,6 @@ internal class MusicSpectrum(private val sampleRate: Int) {
             val last = ceil(to * count / sampleRate).toInt().coerceIn(first, power.lastIndex)
             var peak = 0.0
             for (bin in first..last) peak = max(peak, power[bin])
-            // Power combines both channels, including music with opposite stereo polarity.
             val magnitude = sqrt(peak / 2) * 4 / count
             val db = 20 * log10(max(magnitude, 1e-7))
             bands[band] = ((db + 66) / 60).toFloat().coerceIn(0f, 1f)
@@ -87,7 +84,6 @@ internal class MusicSpectrum(private val sampleRate: Int) {
     }
 }
 
-/** The original seek silhouette is always present; music adds motion instead of replacing it. */
 internal fun waveformHalfHeight(idle: Float, available: Float, level: Float, activity: Float): Float =
     idle + min((available - idle).coerceAtLeast(0f), idle * .85f + available * .15f) *
         level.coerceIn(0f, 1f).pow(1.4f) * activity.coerceIn(0f, 1f)

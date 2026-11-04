@@ -2,7 +2,6 @@ package com.nazcarbon.music.data
 
 import java.net.URI
 
-/** Only extractor-resolved, progressive audio on the playback CDN can bypass file-link validation. */
 data class ResolvedAudioDownload(val url: String, val mimeType: String, val extension: String) {
     fun validated(): ResolvedAudioDownload {
         val uri = URI(url)

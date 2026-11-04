@@ -2,7 +2,6 @@ package com.nazcarbon.music.data
 
 import org.json.JSONObject
 
-/** Versioned separately from app updates so this tour is offered once, including on upgrade. */
 data class TutorialProgress(
     val lesson: Int = 0,
     val mode: Mode = Mode.WELCOME,

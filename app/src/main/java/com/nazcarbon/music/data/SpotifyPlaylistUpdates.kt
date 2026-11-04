@@ -1,6 +1,5 @@
 package com.nazcarbon.music.data
 
-/** Spotify owns its imported rows; local names, artwork and independently added songs stay local. */
 object SpotifyPlaylistUpdates {
     fun refresh(collection: MusicPlaylist, id: String, preview: SpotifyPlaylistPreview, syncedAt: Long): MusicPlaylist {
         require(preview.totalTracks == preview.tracks.size + preview.skippedItems) {

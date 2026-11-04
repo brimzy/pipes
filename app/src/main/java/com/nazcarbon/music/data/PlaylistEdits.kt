@@ -1,6 +1,5 @@
 package com.nazcarbon.music.data
 
-/** Collection edits keep recording order and never persist expiring stream URLs. */
 object PlaylistEdits {
     fun name(value: String, collections: List<MusicPlaylist>, replacing: String? = null): String {
         val clean = value.trim()
@@ -15,7 +14,6 @@ object PlaylistEdits {
         return collection.copy(tracks = collection.tracks + tracks.filter { ids.add(it.id) }.map { it.copy(streamUrl = "") })
     }
 
-    /** Downloading a source album also keeps its track list available without the source page. */
     fun downloadAlbum(collections: List<MusicPlaylist>, title: String, tracks: List<MusicTrack>): List<MusicPlaylist> {
         val ids = tracks.map { it.id }.distinct()
         if (ids.isEmpty() || collections.any { it.isAlbum && it.tracks.map { track -> track.id }.distinct() == ids }) return collections

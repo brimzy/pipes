@@ -5,7 +5,6 @@ import java.io.InputStream
 import java.net.URI
 import java.util.UUID
 
-/** Owns byte-for-byte artwork copies; failed imports never replace the current cover. */
 object PlaylistArtworkFiles {
     const val MAX_BYTES = 20 * 1024 * 1024
 

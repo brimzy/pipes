@@ -2,7 +2,6 @@ import CarPlay
 import Combine
 import UIKit
 
-/// CarPlay uses the same audio player as the phone and exposes local audio only.
 @MainActor
 final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicationSceneDelegate {
     private var library: MusicLibrary { .shared }
@@ -46,7 +45,6 @@ final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicatio
                                   didDisconnectInterfaceController interfaceController: CPInterfaceController) {
         subscriptions.removeAll()
         self.interfaceController = nil
-        // Disconnecting the display does not interrupt the shared audio session.
     }
 
     private func refresh() {
@@ -63,7 +61,6 @@ final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicatio
                 Task { @MainActor in
                     defer { completion() }
                     guard let self else { return }
-                    // Validate again in case a file was removed while its row was on screen.
                     guard !self.library.carPlayable([track]).isEmpty else { self.refresh(); return }
                     self.library.queue = Array(tracks.dropFirst(index + 1))
                     self.library.play(track)

@@ -14,7 +14,6 @@ import androidx.compose.ui.graphics.Color
 
 // Source: nyoom-engineering/base16-oxocarbon, base16-oxocarbon-dark.yaml.
 object PipesPalette {
-    // Ink surfaces leave room for the artwork atmosphere; canonical tokens stay unchanged.
     val Background = Color(0xFF080808)
     val Dock = Color(0xFF101010)
     val Card = Color(0xFF181818)
@@ -34,13 +33,11 @@ object PipesPalette {
     val Violet = Oxocarbon.Base0E
     val Ice = Oxocarbon.Base0F
 
-    // Neutral typography; cyan is reserved for active controls and playback.
     val Heading = Text
     val SongTitle = Text
     val Brand = Text
 }
 
-// Explicitly map every Material role: no default Material purple/red containers.
 private val PipesScheme = darkColorScheme(
     primary = PipesPalette.Accent,
     onPrimary = PipesPalette.Background,

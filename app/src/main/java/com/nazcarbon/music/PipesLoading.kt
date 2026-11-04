@@ -27,7 +27,6 @@ internal fun AnimatedAssetGif(assetName: String, description: String?, modifier:
     }
 }
 
-/** Movie supports animated GIFs on every supported Android version, without another dependency. */
 @Suppress("DEPRECATION")
 private class AssetGifView(context: Context, assetName: String) : View(context) {
     private val movie = context.assets.open(assetName).use { Movie.decodeStream(it) }

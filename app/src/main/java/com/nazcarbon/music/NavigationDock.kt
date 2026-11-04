@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nazcarbon.music.ui.theme.PipesPalette as P
 
-// Reserved by the floating player and snackbar as well as the dock itself.
 internal val DockClearance = 96.dp
 private val destinations = listOf("Home", "Search", "Explore", "Library")
 
@@ -61,7 +60,6 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
         animateFloatAsState(if (index == selected) 1.9f else 1f,
             spring(dampingRatio = .86f, stiffness = 520f), label = "dock width $index")
     }
-    // Keep the last anchor while a secondary screen hides the marker.
     var anchor by remember { mutableIntStateOf(selected.coerceAtLeast(0)) }
     LaunchedEffect(selected) { if (selected >= 0) anchor = selected }
     val marker by animateFloatAsState(anchor.toFloat(), spring(.86f, 520f), label = "dock anchor")
@@ -76,7 +74,6 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
             .drawBehind {
                 val widths = weights.map { it.value }
                 val total = widths.sum()
-                // Interpolate between the live centers as the active tab expands.
                 val leftIndex = marker.toInt().coerceIn(0, 3)
                 val rightIndex = (leftIndex + 1).coerceAtMost(3)
                 fun center(index: Int) = (widths.take(index).sum() + widths[index] / 2) / total
@@ -117,7 +114,6 @@ internal fun NavigationDock(page: String, onSelect: (String) -> Unit) {
     }
 }
 
-/** A single 24-unit grid and stroke weight for the four navigation tools. */
 @Composable
 private fun DockGlyph(index: Int, color: Color) {
     Canvas(Modifier.size(24.dp)) {

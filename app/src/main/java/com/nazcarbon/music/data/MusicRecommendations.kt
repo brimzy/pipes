@@ -45,8 +45,6 @@ object MusicRecommendations {
         val result = mutableListOf<MusicTrack>()
         while (pool.isNotEmpty() && result.size < 30) {
             val alternatives = pool.filter { tokens(it.second.artist) != previousArtist }
-            // Keep discovery close to the source's relevance order while permitting variety.
-            // A bounded window prevents a distant result from jumping ahead of every close match.
             val eligible = alternatives.ifEmpty { pool }.take(5)
             val chosen = eligible.minBy { (rank, track) ->
                 val repeats = artistCounts.getOrDefault(tokens(track.artist), 0)

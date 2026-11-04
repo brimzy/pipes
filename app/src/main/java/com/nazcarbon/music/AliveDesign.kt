@@ -24,7 +24,6 @@ import com.nazcarbon.music.ui.theme.PipesPalette as P
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-// The layout uses a 4dp unit: 8 / 12 / 16 / 24 / 32, with 48dp touch targets.
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable internal fun QueueGesture(
     track: MusicTrack, onPlay: () -> Unit, onAdd: () -> Unit, onRemove: () -> Unit,

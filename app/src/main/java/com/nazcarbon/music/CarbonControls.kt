@@ -83,7 +83,6 @@ internal fun CarbonSeekBar(value: Float, maximum: Float, enabled: Boolean, onCha
                         val nextBin = (bin + 1).coerceAtMost(levels.lastIndex)
                         val energy = levels[bin] + (levels[nextBin] - levels[bin]) * (bandPosition - bin)
                         val idleHalf = (end.y - start.y) / 2f
-                        // Keep the original sculpted silhouette, and let spectrum peaks lift it.
                         val half = waveformHalfHeight(idleHalf, size.height / 2f - 2.dp.toPx(), energy, activity)
                         val grow = 1f + glow * .45f
                         val middle = size.height / 2

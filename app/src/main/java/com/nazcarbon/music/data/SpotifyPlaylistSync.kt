@@ -6,7 +6,6 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
-/** Called on the UI dispatcher so updates always merge with the latest collection edits. */
 class SpotifyPlaylistSync(
     private val read: () -> List<MusicPlaylist>,
     private val write: (List<MusicPlaylist>) -> Unit,
@@ -30,7 +29,6 @@ class SpotifyPlaylistSync(
                 val preview = withTimeout(90_000) { fetch(source) }
                 val latest = read()
                 val current = latest.firstOrNull { it.spotifyPlaylistId == source } ?: continue
-                // An explicit re-import completed while this request was in flight.
                 if (current.lastSpotifySync != before.lastSpotifySync) continue
                 val updated = SpotifyPlaylistUpdates.refresh(current, source, preview, now())
                 write(latest.map { if (it === current) updated else it })

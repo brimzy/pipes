@@ -3,7 +3,6 @@ package com.nazcarbon.music.data
 import java.net.URI
 import java.net.URLDecoder
 
-/** Recognize links by host, so ordinary search terms and lookalike domains stay searches. */
 object YouTubeLinks {
     data class Target(val videoId: String?, val playlistId: String?) {
         val videoUrl: String? get() = videoId?.let { "https://www.youtube.com/watch?v=$it" }

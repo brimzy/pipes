@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.nazcarbon.music.ui.theme.PipesPalette as P
 
-/** Stays behind the scrolling content, including the space around the floating dock. */
 @Composable
 internal fun PlayerBackdrop(artwork: String, modifier: Modifier = Modifier) {
     Box(modifier.clip(androidx.compose.ui.graphics.RectangleShape).background(P.Background)) {
@@ -40,7 +39,6 @@ internal fun PlayerBackdrop(artwork: String, modifier: Modifier = Modifier) {
     }
 }
 
-/** A translucent ink finish, a lit edge, and a soft cast shadow shared by both players. */
 internal fun Modifier.playerSurface(shape: Shape, elevation: Dp = 16.dp): Modifier =
     shadow(elevation, shape, clip = false,
         ambientColor = Color.Black.copy(alpha = .30f),
@@ -53,7 +51,6 @@ internal fun Modifier.playerSurface(shape: Shape, elevation: Dp = 16.dp): Modifi
         )), shape)
         .clip(shape)
 
-/** Stable star positions; a slow drift stays behind artwork and never intercepts input. */
 @Composable
 internal fun PlayerStars(playing: Boolean, modifier: Modifier = Modifier) {
     val phase = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }

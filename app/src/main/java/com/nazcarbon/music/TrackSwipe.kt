@@ -22,7 +22,6 @@ internal fun trackSwipeDirection(distance: Float, threshold: Float, hasNext: Boo
     else -> 0
 }
 
-/** Attach to the metadata row so the seek bar retains its own horizontal gesture. */
 internal fun Modifier.trackSwipe(key: String, hasNext: Boolean, previous: () -> Unit, next: () -> Unit): Modifier = composed {
     var drag by remember(key) { mutableFloatStateOf(0f) }
     val threshold = with(LocalDensity.current) { 56.dp.toPx() }

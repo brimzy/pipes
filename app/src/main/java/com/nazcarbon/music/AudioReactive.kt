@@ -10,7 +10,6 @@ import java.nio.ByteOrder
 import kotlinx.coroutines.delay
 import androidx.lifecycle.repeatOnLifecycle
 
-/** In-process amplitude data only: never records the microphone or retains audio. */
 internal object AudioLevels {
     @Volatile var frame = FloatArray(48)
     @Volatile var updatedAt = 0L
@@ -26,8 +25,6 @@ internal class ReactiveAudioProcessor : BaseAudioProcessor() {
     override fun onConfigure(inputAudioFormat: AudioFormat): AudioFormat =
         if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) inputAudioFormat else AudioFormat.NOT_SET
     override fun queueInput(inputBuffer: ByteBuffer) {
-        // Media3 polls with its shared EMPTY_BUFFER before audio and while draining.
-        // Avoid reusing that same zero-capacity buffer as both copy source and destination.
         if (!inputBuffer.hasRemaining()) return
         val copy = inputBuffer.duplicate().order(ByteOrder.LITTLE_ENDIAN)
         val channels = inputAudioFormat.channelCount.coerceAtLeast(1)

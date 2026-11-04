@@ -2,7 +2,6 @@ package com.nazcarbon.music.data
 
 import java.util.Locale
 
-/** Merge music and video search without burying exact matches behind a whole source batch. */
 object MusicSearchResults {
     private fun words(value: String): List<String> = value.lowercase(Locale.ROOT)
         .split(Regex("[^\\p{L}\\p{N}]+")).filter { it.isNotBlank() }

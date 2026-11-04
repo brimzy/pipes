@@ -22,7 +22,6 @@ class SpotifyPlaylistSyncLiveTest {
         val updated = saved.single()
         assertEquals(received.totalTracks, updated.spotifyTrackIds.size + updated.sourceSkipped)
         assertEquals(received.tracks.map { it.title }, updated.tracks.map { it.title })
-        // Compare first occurrences; repeated Spotify recordings have independent row IDs.
         val firstRows = updated.tracks.distinctBy { it.pageUrl }
         val originalFirstRows = SpotifyPlaylistUpdates.import(emptyList(), id, initial, 0).tracks.distinctBy { it.pageUrl }
             .associate { it.pageUrl to it.id }

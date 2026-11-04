@@ -2,7 +2,6 @@ package com.nazcarbon.music.data
 
 import java.util.Base64
 
-/** Opaque, context-specific IDs ensure controllers can select only saved library entries. */
 class CarCatalog(liked: List<MusicTrack>, playlists: List<MusicPlaylist>, downloads: List<MusicTrack>) {
     data class Folder(val id: String, val title: String)
     data class Entry(val id: String, val track: MusicTrack, val following: List<MusicTrack>)

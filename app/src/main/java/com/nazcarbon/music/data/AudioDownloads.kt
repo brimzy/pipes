@@ -183,7 +183,6 @@ object AudioDownloads {
         return listOf(DEFAULT_CATEGORY) + clean.filterNot { it.equals(DEFAULT_CATEGORY, ignoreCase = true) }
     }
 
-    /** A successful transfer may outlive its file. Verify readability before reusing it. */
     fun downloadedUri(context: Context, manager: DownloadManager, id: Long): Uri? = runCatching {
         val uri = manager.getUriForDownloadedFile(id) ?: return null
         context.contentResolver.openFileDescriptor(uri, "r")?.use { uri }

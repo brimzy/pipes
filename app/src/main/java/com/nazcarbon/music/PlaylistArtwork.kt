@@ -25,7 +25,6 @@ import java.io.File
 
 internal fun playlistArtworkDirectory(context: Context) = File(context.filesDir, "playlist-artwork")
 
-/** Call on IO. Keep the original bytes so animated GIFs retain all their frames. */
 internal suspend fun importPlaylistArtwork(context: Context, uri: Uri): String {
     val input = context.contentResolver.openInputStream(uri) ?: error("Couldn't open this image.")
     val file = PlaylistArtworkFiles.import(playlistArtworkDirectory(context), input) { candidate ->

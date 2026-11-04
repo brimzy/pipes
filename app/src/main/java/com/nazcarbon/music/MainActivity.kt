@@ -640,7 +640,6 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun closePlayback() {
-                    // Invalidate in-flight stream and queue requests before clearing the session.
                     playbackRequest += 1
                     playJob?.cancel()
                     playJob = null
@@ -2032,7 +2031,6 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 }
                 IconButton(onClick = { feedback(onStop) }) { Icon(Icons.Default.Close, "Stop playback and close player", tint = Ink) }
             }
-            // Cover size follows the remaining space; metadata and controls stay visible.
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
                 .padding(vertical = if (compact) 8.dp else 12.dp), contentAlignment = Alignment.Center) {
                 val artworkSize = minOf(maxWidth, maxHeight, 380.dp).coerceAtLeast(0.dp)

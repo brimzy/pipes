@@ -21,7 +21,6 @@ internal object PipesSpace {
     val Metadata = 4.dp
 }
 
-// Surfaces use their fill and shadow for depth. Edges are opt-in, never a default frame.
 internal fun Modifier.carbonSurface(
     shape: Shape,
     elevation: Dp = 4.dp,
@@ -33,7 +32,6 @@ internal fun Modifier.carbonSurface(
         val outline = shape.createOutline(size, layoutDirection, this)
         onDrawWithContent {
             drawContent()
-            // The clip retains the inside half of this stroke: exactly two physical pixels.
             drawOutline(outline, edge, style = Stroke(width = 4f))
         }
     } else Modifier)

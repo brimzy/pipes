@@ -42,7 +42,7 @@ internal open class CarMediaLibrary(
                 parents.forEach { id -> librarySession?.notifyChildrenChanged(id,
                     library.folders(id).size + library.children(id).size, null) }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { /* Re-read on the host's next browse request if storage is unavailable. */ }
+            catch (_: Exception) {                                                                            }
         }
     }
 
