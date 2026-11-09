@@ -30,7 +30,7 @@ class OfflinePlaybackTest {
     }
 
     @Test fun localFilesBypassDownloadLookupAndOnlineResolution() {
-        for (uri in listOf("content://music/1", "file:///music/song.flac")) {
+        for (uri in listOf("content://music/1", "file:///music/song.flac", "file:/music/song.wav", "FILE:/music/song.wav")) {
             val result = OfflinePlayback.resolve(saved.copy(pageUrl = uri), { error("No lookup for local files") }, { error("No online request") })
             assertEquals(uri, result.streamUrl)
         }

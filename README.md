@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <strong>Pipes 5.1.58 — a music player with artwork discovery, song radio, and local audio.</strong><br />
+  <strong>Pipes 5.1.60 — a music player with artwork discovery, song radio, and local audio.</strong><br />
   Monochrome charcoal surfaces. An artwork atmosphere that follows your music. Neutral text and small color accents for active controls. Your library, queue, and playback in one place.
 </p>
 
@@ -66,7 +66,7 @@ Each lesson has a **Try…** button that opens the relevant part of the real app
 | :--- | :--- |
 | **Android Auto** | Browse saved likes, playlists, completed downloads, and search your saved library from a compatible car host. |
 | **Explore** | Browse moods and genres with playable artwork previews, session caching, refresh and retry. |
-| **Discover** | Keep scrolling for music related to the playing song and your liked artists. |
+| **Discover** | Recommendations from recent listening, likes, and saved playlists, with related recordings and genre context. |
 | **Song radio** | Start radio from a recording without resetting its playback position. |
 | **Playback** | Background audio, shuffle, repeat, a live queue, and a waveform that lights up as you seek. |
 | **Learn Pipes** | Seven resumable lessons, silent navigation and waveform practice, and shortcuts into the actual app. |
@@ -80,7 +80,7 @@ Swipe a song right to add it to the queue or left to remove an upcoming queue en
 
 ## Design & gestures
 
-Pipes uses a charcoal canvas and translucent surfaces over a persistent artwork backdrop with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and builds up to 30 upcoming songs per batch, refilling as the queue runs down.
+Pipes uses a charcoal canvas and translucent surfaces over a persistent artwork backdrop with neutral typography, a restrained cyan accent, Libron regular and bold typography, and a four-point spacing grid. Home combines a featured recording with an artwork grid that refreshes around the selected song. Radio keeps source relevance within a bounded selection window while varying artists and excluding duplicate recordings. It reads additional source pages and adds up to 30 upcoming songs per batch, continuously refilling after single songs and online playlists. Playlist queues expose every selected track immediately; audio URLs resolve when loaded. Up next follows the actual shuffle order.
 
 A compact floating navigation dock expands the active destination, with custom line icons and a single moving cyan marker. Its translucent ink surface shares the player’s subtle edge lighting and soft shadows. Spring feedback makes selection and presses responsive.
 
@@ -121,9 +121,9 @@ Resolution happens directly on your device against Instagram. Pipes strips track
 
 ## Privacy & security
 
-These protections describe the **Android 5.1.58 app**; the iOS app has a separate implementation.
+These protections describe the **Android 5.1.60 app**; the iOS app has a separate implementation.
 
-- Library, likes, playlists, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
+- Library, likes, playlists, recent listening, search history, tutorial progress, settings, and download records are stored on your device. Pipes includes no analytics or crash-reporting SDK and operates no collection server.
 - Android backup and device-transfer rules exclude app data. Uninstalling or clearing app storage removes local settings and library data. Device manufacturers can differ in how they implement transfer restrictions.
 - Downloads use app-specific storage, without broad storage permissions. Android's system download service manages transfers and may retain download metadata and display titles in notifications. These files are not encrypted by Pipes.
 - Unrecognized media controllers are rejected. Controllers trusted by Android receive limited playback controls; validated car hosts can browse and play saved library entries; only the app's own UID receives Pipes-specific queue/radio commands and arbitrary queue insertion. Android may trust notification listeners you explicitly enable, which can see media metadata.
@@ -144,7 +144,9 @@ cd pipes
 gradle :app:assembleDebug
 ```
 
-Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
+Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (installs alongside the signed app).
+
+Run the device playback regression on a connected Android device with `gradle :app:connectedDebugAndroidTest`. It exercises a 120-song queue, shuffle toggles, Play next, background audio, and audio focus. Add `-Pandroid.testInstrumentationRunnerArguments.live_source=1` to also check a single online song's autoplay queue and natural transition.
 
 Run the project checks:
 
@@ -165,7 +167,7 @@ PIPES_LIVE_DISCOGRAPHY_TEST=1 gradle :app:testDebugUnitTest
 
 </details>
 
-Signed releases are built and published by [GitHub Actions](https://github.com/brimzy/pipes/actions/workflows/release.yml) after the build, unit tests, and lint pass. Debug and release APKs use different signing keys and cannot replace each other directly.
+Signed releases are built and published by [GitHub Actions](https://github.com/brimzy/pipes/actions/workflows/release.yml) after the build, unit tests, and lint pass. Debug builds install as `com.nazcarbon.music.debug` alongside the signed release, keeping testing separate from your music library.
 
 ---
 

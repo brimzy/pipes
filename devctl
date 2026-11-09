@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
-PACKAGE="com.nazcarbon.music"
+PACKAGE="com.nazcarbon.music.debug"
 AVD="NazCarbon_API_36"
 
 build() {

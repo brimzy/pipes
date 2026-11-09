@@ -88,4 +88,25 @@ class MusicRecommendationsTest {
         assertEquals(205L, NewPipeMusicSource().parseMusicRadio(response).single().durationSeconds)
     }
 
+    @Test fun `exhausted source mixes can reuse older related songs without duplicating upcoming entries`() {
+        val seed = song("seed", "Current")
+        val queued = song("queued", "Already next")
+        val recent = song("recent", "Just heard")
+        val older = song("older", "Older related song")
+        val result = MusicRecommendations.continuation(seed, listOf(seed, queued, recent, older), listOf(seed, queued), listOf(recent))
+        assertEquals(listOf(older), result)
+    }
+
+    @Test fun `a small radio catalog keeps playing when every related recording was recently heard`() {
+        val seed = song("seed", "Current")
+        val heard = song("heard", "Related song")
+        assertEquals(listOf(heard), MusicRecommendations.continuation(seed, listOf(seed, heard), listOf(seed), listOf(heard)))
+    }
+
+    @Test fun `continuation never repeats the current song or an already queued recording`() {
+        val seed = song("seed", "Current")
+        val queued = song("queued", "Already next")
+        assertTrue(MusicRecommendations.continuation(seed, listOf(seed, queued), listOf(seed, queued), emptyList()).isEmpty())
+    }
+
 }

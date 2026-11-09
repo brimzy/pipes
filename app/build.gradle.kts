@@ -21,13 +21,18 @@ android {
 
     defaultConfig {
         applicationId = "com.nazcarbon.music"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 26
         targetSdk = 35
-        versionCode = providers.gradleProperty("versionCodeOverride").orNull?.toInt() ?: 50158
-        versionName = "5.1.58"
+        versionCode = providers.gradleProperty("versionCodeOverride").orNull?.toInt() ?: 50160
+        versionName = "5.1.60"
     }
 
     buildTypes {
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         getByName("release") {
             signingConfig = signingConfigs.getByName("release")
         }
@@ -67,5 +72,7 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

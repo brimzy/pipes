@@ -167,7 +167,7 @@ private fun musicItem(track: MusicTrack, streamUrl: String, radio: Boolean = fal
                 .setArtworkUri(Uri.parse(track.thumbnailUrl))
                 .setExtras(Bundle().apply {
                     val queueSession = java.util.UUID.randomUUID().toString()
-                    val canAutoplay = autoplay && !track.pageUrl.startsWith("content://")
+                    val canAutoplay = autoplay && !com.nazcarbon.music.data.OfflinePlayback.isLocal(track)
                     putBoolean(RADIO_METADATA_KEY, radio)
                     putBoolean(AUTO_QUEUE_METADATA_KEY, canAutoplay)
                     putString(AUTO_QUEUE_SESSION_KEY, queueSession)
@@ -246,9 +246,21 @@ class MainActivity : ComponentActivity() {
                 var loading by remember { mutableStateOf(false) }
                 var searchError by remember { mutableStateOf<String?>(null) }
                 var error by remember { mutableStateOf<String?>(null) }
-                var queueIndex by remember { mutableStateOf(0) }
+                var upcomingQueue by remember { mutableStateOf<List<Int>>(emptyList()) }
                 var queueTracks by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
                 var playlists by remember { mutableStateOf(PlaylistStore.load(prefs)) }
+                var recentListening by remember {
+                    mutableStateOf(PlaylistStore.load(prefs, "listening_history").flatMap { it.tracks })
+                }
+                var recommendationRegion by remember { mutableStateOf(prefs.getString("recommendation_region", "AUTO") ?: "AUTO") }
+                DisposableEffect(prefs) {
+                    val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                        if (key == "listening_history") recentListening = PlaylistStore.load(prefs, "listening_history").flatMap { it.tracks }
+                        if (key == "recommendation_region") recommendationRegion = prefs.getString(key, "AUTO") ?: "AUTO"
+                    }
+                    prefs.registerOnSharedPreferenceChangeListener(listener)
+                    onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+                }
                 var downloads by remember { mutableStateOf(AudioDownloads.load(prefs)) }
                 var downloadCategories by remember { mutableStateOf(AudioDownloads.loadCategories(prefs, downloads)) }
                 var downloadStatuses by remember { mutableStateOf<Map<Long, AudioDownloadStatus?>>(emptyMap()) }
@@ -347,7 +359,7 @@ class MainActivity : ComponentActivity() {
                                 item.mediaMetadata.title?.toString().orEmpty(), item.mediaMetadata.artist?.toString().orEmpty(),
                                 item.mediaMetadata.extras?.getLong("pipes_duration") ?: 0, item.mediaMetadata.artworkUri?.toString().orEmpty(), "", item.mediaMetadata.extras?.getString("pipes_page_url") ?: item.mediaId)
                         }
-                        queueIndex = player.currentMediaItemIndex
+                        upcomingQueue = player.upcomingIndices()
                         queueTracks = (0 until player.mediaItemCount).map { index ->
                             val queued = player.getMediaItemAt(index)
                             knownTracks[queued.mediaId] ?: MusicTrack(queued.mediaId,
@@ -649,7 +661,7 @@ class MainActivity : ComponentActivity() {
                     mediaPlayer?.clearMediaItems()
                     current = null
                     queueTracks = emptyList()
-                    queueIndex = 0
+                    upcomingQueue = emptyList()
                     radioSeed = null
                     radioLoading = false
                     isPlaying = false
@@ -674,10 +686,11 @@ class MainActivity : ComponentActivity() {
                             val session = activePlayer.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
                                 ?: error("The playlist playback session couldn't start.")
                             val queueId = PlaybackQueueRequests.register(session, candidates)
-                            activePlayer.sendCustomCommand(SessionCommand("pipes.set_queue", Bundle.EMPTY), Bundle().apply {
+                            val result = activePlayer.sendCustomCommand(SessionCommand("pipes.set_queue", Bundle.EMPTY), Bundle().apply {
                                 putString("queue_id", queueId)
                                 putString("session", session)
                             })
+                            check(withContext(Dispatchers.IO) { result.get().resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS })
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { if (request == playbackRequest) error = "Couldn't prepare the queue. Try again." }
                     }
@@ -689,20 +702,14 @@ class MainActivity : ComponentActivity() {
                         try {
                             val player = mediaPlayer ?: return@launch
                             val session = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
-                            val resolved = resolveForPlayback(track)
-                            if (player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) != session) {
-                                notice = "Playback changed. Add the song again."
-                                return@launch
-                            }
-                            knownTracks[resolved.id] = resolved
-                            val template = player.currentMediaItem ?: return@launch
-                            val item = musicItem(resolved, resolved.streamUrl)
-                            val extras = Bundle(item.mediaMetadata.extras).apply {
-                                putString(AUTO_QUEUE_SESSION_KEY, session)
-                                putBoolean(RADIO_METADATA_KEY, template.mediaMetadata.extras?.getBoolean(RADIO_METADATA_KEY) == true)
-                                putBoolean(AUTO_QUEUE_METADATA_KEY, template.mediaMetadata.extras?.getBoolean(AUTO_QUEUE_METADATA_KEY) == true)
-                            }
-                            player.addMediaItem(item.buildUpon().setMediaMetadata(item.mediaMetadata.buildUpon().setExtras(extras).build()).build())
+                            if (session == null) return@launch
+                            knownTracks[track.id] = track
+                            val requestId = PlaybackQueueRequests.register(session, listOf(track))
+                            val result = player.sendCustomCommand(SessionCommand("pipes.add_queue", Bundle.EMPTY), Bundle().apply {
+                                putString("queue_id", requestId)
+                                putString("session", session)
+                            })
+                            check(withContext(Dispatchers.IO) { result.get().resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS })
                             notice = "Added to queue · ${track.title}"
                         } catch (cancelled: CancellationException) { throw cancelled }
                         catch (_: Exception) { notice = "Couldn't add this song to the queue. Try again." }
@@ -716,10 +723,10 @@ class MainActivity : ComponentActivity() {
                             val player = mediaPlayer ?: return@launch
                             val session = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
                                 ?: return@launch
-                            val existing = com.nazcarbon.music.data.PlayNextQueue.existingUpcomingIndex(
+                            val existing = com.nazcarbon.music.data.PlaybackOrder.existingUpcoming(
                                 (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId },
-                                player.currentMediaItemIndex, track.id)
-                            val resolved = if (existing != null) track else resolveForPlayback(track)
+                                player.playbackOrder(), player.currentMediaItemIndex, track.id)
+                            val resolved = track
                             if (player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) != session) {
                                 notice = "Playback changed. Choose Play next again."
                                 return@launch
@@ -738,7 +745,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 fun startRadio(track: MusicTrack) {
-                    if (track.pageUrl.startsWith("content://")) { notice = "Radio is available for online songs."; return }
+                    if (com.nazcarbon.music.data.OfflinePlayback.isLocal(track)) { notice = "Radio is available for online songs."; return }
                     queueJob?.cancel()
                     radioSeed = track
                     error = null
@@ -766,7 +773,7 @@ class MainActivity : ComponentActivity() {
 
                 fun playSequence(track: MusicTrack, sequence: List<MusicTrack>, radio: Boolean = false) {
                     if (!radio) radioSeed = null
-                    val ordered = sequence.distinctBy { it.id }.dropWhile { it.id != track.id }.ifEmpty { listOf(track) }
+                    val ordered = com.nazcarbon.music.data.PlaybackOrder.sequence(sequence, track, mediaPlayer?.shuffleModeEnabled == true)
                     queueTracks = ordered
                     val request = play(track, keepQueue = true, radio = radio)
                     enqueue(ordered.drop(1), request)
@@ -849,7 +856,7 @@ class MainActivity : ComponentActivity() {
                 fun chooseDownloads(tracks: List<MusicTrack>, title: String, albumName: String? = null) {
                     if (downloadResolving) return
                     val online = tracks.distinctBy { it.id }.filterNot {
-                        it.pageUrl.startsWith("content://") || it.pageUrl.startsWith("file://") || it.id.startsWith("download:")
+                        com.nazcarbon.music.data.OfflinePlayback.isLocal(it) || it.id.startsWith("download:")
                     }
                     if (online.isEmpty()) {
                         notice = "These songs are already local files."
@@ -1032,7 +1039,7 @@ class MainActivity : ComponentActivity() {
                     },
                     LocalPlayNext provides ::playNext, LocalAddToQueue provides ::addToQueue, LocalRemoveFromQueue provides { track ->
                     mediaPlayer?.let { player ->
-                        val index = ((player.currentMediaItemIndex + 1) until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
+                        val index = player.upcomingIndices().firstOrNull { player.getMediaItemAt(it).mediaId == track.id }
                         if (index != null) { player.removeMediaItem(index); notice = "Removed from queue · ${track.title}" }
                         else notice = "This song is not in the upcoming queue"
                     }
@@ -1067,7 +1074,7 @@ class MainActivity : ComponentActivity() {
                                     queueTracks.size,
                                     position, duration, seekable, buffering, audioQuality,
                                     { mediaPlayer?.seekTo(it) },
-                                    shuffle, { mediaPlayer?.shuffleModeEnabled = !shuffle },
+                                    shuffle, { mediaPlayer?.sendCustomCommand(SessionCommand("pipes.toggle_shuffle", Bundle.EMPTY), Bundle.EMPTY) },
                                     repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
                                     current!!.id in likedIds, { toggleLike(current!!) },
                                     { page = previousPage }, ::closePlayback, { choosePlaylist(current!!) },
@@ -1123,11 +1130,11 @@ class MainActivity : ComponentActivity() {
                                         { chooseDownloads(releaseTracks, "Download album", "${selectedArtist?.artist?.name.orEmpty()} · ${release.title}") },
                                     )
                                 }
-                                "Up next" -> UpNext(queueTracks, queueIndex, current, isPlaying, radioSeed, radioLoading, { index ->
+                                "Up next" -> UpNext(queueTracks, upcomingQueue, current, isPlaying, radioSeed, radioLoading, { index ->
                                     mediaPlayer?.let { player ->
                                         if (index in 0 until player.mediaItemCount) { player.seekTo(index, 0L); player.play() }
                                     }
-                                }, ::startRadio, { index -> mediaPlayer?.let { if (index > it.currentMediaItemIndex && index < it.mediaItemCount) it.removeMediaItem(index) } }, ::toggleLike, ::choosePlaylist, likedIds)
+                                }, ::startRadio, { index -> mediaPlayer?.let { if (index in it.upcomingIndices()) it.removeMediaItem(index) } }, ::toggleLike, ::choosePlaylist, likedIds)
                                 "Playlist" -> {
                                     val playlist = playlists.firstOrNull { it.name == selectedPlaylist }
                                     if (playlist != null) PlaylistScreen(
@@ -1158,7 +1165,9 @@ class MainActivity : ComponentActivity() {
                                     ) else Library(likedIds.mapNotNull { knownTracks[it] }, likedIds, playlists, current, isPlaying, { selectedPlaylist = it.name; page = "Playlist" }, ::play, ::toggleLike, ::choosePlaylist, downloads, downloadCategories, downloadStatuses, { downloadDialogError = null; showDownloadDialog = true }, { showCategoryDialog = true }, ::playDownloaded, ::removeAudioDownload, { showNewPlaylistDialog = true }, ::startRadio)
                                 }
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
-                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying, ::openPlayer)
+                                else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current,
+                                    com.nazcarbon.music.data.ListeningProfile.seeds(current, recentListening, likedIds.mapNotNull { knownTracks[it] }, playlists),
+                                    recommendationRegion, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying, ::openPlayer)
                             }
                             }
                         }
@@ -1643,7 +1652,7 @@ class MainActivity : ComponentActivity() {
     val sort = rememberCollectionSort("playlist:${playlist.name}")
     var offlineOnly by rememberSaveable(playlist.name) { mutableStateOf(false) }
     val states = LocalDownloadStates.current
-    val offlineTracks = playlist.tracks.filter { states[it.id] == DownloadState.SAVED || it.pageUrl.startsWith("content://") || it.pageUrl.startsWith("file://") }
+    val offlineTracks = playlist.tracks.filter { states[it.id] == DownloadState.SAVED || com.nazcarbon.music.data.OfflinePlayback.isLocal(it) }
     val sortedTracks = sort.value.tracks(if (offlineOnly) offlineTracks else playlist.tracks)
     val saved = offlineTracks.size
     var editing by remember { mutableStateOf(false) }
@@ -1713,7 +1722,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable private fun UpNext(
     tracks: List<MusicTrack>,
-    queueIndex: Int,
+    upcoming: List<Int>,
     current: MusicTrack?,
     playing: Boolean,
     radioSeed: MusicTrack?,
@@ -1725,7 +1734,7 @@ class MainActivity : ComponentActivity() {
     onSave: (MusicTrack) -> Unit,
     liked: Set<String>,
 ) {
-    val following = tracks.drop((queueIndex + 1).coerceAtLeast(0))
+    val following = upcoming.filter { it in tracks.indices }
     Column(Modifier.fillMaxSize()) {
         Text("Up next", color = PipesPalette.Heading, fontSize = 26.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp))
         Text(
@@ -1744,8 +1753,9 @@ class MainActivity : ComponentActivity() {
             else Text("Autoplay will fill this queue with related songs as you listen.", color = Muted, modifier = Modifier.padding(PipesSpace.Page))
         } else LazyColumn {
             items(following.size) { offset ->
-                val track = following[offset]
-                TrackRow(track, current?.id == track.id && playing, track.id in liked, { onPlay(queueIndex + 1 + offset) }, onLike, onRadio, onSave, onRemove = { onRemove(queueIndex + 1 + offset) })
+                val index = following[offset]
+                val track = tracks[index]
+                TrackRow(track, current?.id == track.id && playing, track.id in liked, { onPlay(index) }, onLike, onRadio, onSave, onRemove = { onRemove(index) })
             }
         }
     }
@@ -2066,7 +2076,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 Spacer(Modifier.height(16.dp))
                 HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Ink.copy(alpha = .08f))
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TextButton(onClick = { feedback(onRadio) }, modifier = Modifier.weight(1f), enabled = !radioLoading && !track.pageUrl.startsWith("content://")) {
+                    TextButton(onClick = { feedback(onRadio) }, modifier = Modifier.weight(1f), enabled = !radioLoading && !com.nazcarbon.music.data.OfflinePlayback.isLocal(track)) {
                         Icon(Icons.Default.Radio, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
                     }
                     TextButton(onClick = { feedback(onQueue) }, modifier = Modifier.weight(1f)) {
@@ -2093,7 +2103,7 @@ private fun playbackTime(milliseconds: Long): String {
 @Composable
 private fun DiscoveryHome(
     feed: com.nazcarbon.music.data.DiscoveryFeed, list: androidx.compose.foundation.lazy.LazyListState,
-    artists: List<String>, current: MusicTrack?, liked: Set<String>,
+    artists: List<String>, current: MusicTrack?, seeds: List<MusicTrack>, region: String, liked: Set<String>,
     onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
     onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit,
     playing: Boolean, onOpenPlayer: () -> Unit,
@@ -2104,29 +2114,30 @@ private fun DiscoveryHome(
     var error by remember { mutableStateOf<String?>(null) }
     var exhausted by remember { mutableStateOf(false) }
     var refreshToken by remember { mutableIntStateOf(0) }
-    val latestCurrent by rememberUpdatedState(current)
     val latestArtists by rememberUpdatedState(artists)
+    val latestSeeds by rememberUpdatedState(seeds)
+    val latestRegion by rememberUpdatedState(region)
     fun loadMore() {
         if (loading || exhausted) return
         loading = true
         error = null
         scope.launch {
             try {
-                val batch = withContext(Dispatchers.IO) { feed.next(latestCurrent, latestArtists) }
-                tracks = tracks + batch
+                val batch = withContext(Dispatchers.IO) { feed.next(latestSeeds, latestArtists, latestRegion) }
+                tracks = feed.snapshot()
                 exhausted = batch.isEmpty()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { error = "Couldn't load more music. Tap to try again." }
             finally { loading = false }
         }
     }
-    LaunchedEffect(current?.id, artists, refreshToken) {
+    LaunchedEffect(seeds.map { it.pageUrl }, artists, region, refreshToken) {
         while (loading) delay(100)
         loading = true
         exhausted = false
         error = null
         try {
-            withContext(Dispatchers.IO) { feed.refresh(latestCurrent, latestArtists) }
+            withContext(Dispatchers.IO) { feed.refresh(latestSeeds, latestArtists, latestRegion) }
             tracks = feed.snapshot()
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Couldn't refresh discovery. Tap to try again." }
@@ -2146,7 +2157,7 @@ private fun DiscoveryHome(
                 }, color = Ink, fontSize = 32.sp, lineHeight = 36.sp,
                     fontWeight = FontWeight.Bold, letterSpacing = 0.sp)
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: "A NEW FREQUENCY", color = Muted, fontSize = 10.sp,
+                    Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: if (seeds.isNotEmpty() || artists.isNotEmpty()) "FROM YOUR LISTENING & LIBRARY" else "A NEW FREQUENCY", color = Muted, fontSize = 10.sp,
                         letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = Ink) }
                 }

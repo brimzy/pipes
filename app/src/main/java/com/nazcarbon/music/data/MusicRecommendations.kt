@@ -34,6 +34,9 @@ object MusicRecommendations {
         }, random)
     }
 
+    fun continuation(seed: MusicTrack, candidates: List<MusicTrack>, queued: List<MusicTrack>, recent: List<MusicTrack>): List<MusicTrack> =
+        discovery(seed, candidates, queued + recent).ifEmpty { discovery(seed, candidates, queued) }
+
     fun radio(seed: MusicTrack, candidates: List<MusicTrack>, random: Random = Random.Default): List<MusicTrack> {
         val seenSongs = mutableSetOf(tokens(seed.title) to tokens(seed.artist))
         val pool = candidates.distinctBy { it.id }.distinctBy { it.pageUrl }.filter { candidate ->

@@ -11,6 +11,14 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.ResolvingDataSource
+import com.nazcarbon.music.data.PlaybackStreams
+import com.nazcarbon.music.data.PlaybackStreamCache
+import com.nazcarbon.music.data.PlaybackOrder
+import com.nazcarbon.music.data.ListeningProfile
+import com.nazcarbon.music.data.PlaylistStore
+import com.nazcarbon.music.data.MusicPlaylist
+import com.nazcarbon.music.data.MusicRecommendations
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -36,9 +44,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import com.nazcarbon.music.data.PlaybackQueueRequests
 import com.nazcarbon.music.data.retryPlaybackRequest
 import kotlinx.coroutines.withContext
@@ -49,8 +54,9 @@ class PlaybackService : MediaLibraryService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var radioSource: NewPipeMusicSource? = null
     private var isRefillingQueue = false
-    private val pendingTracks = ArrayDeque<MusicTrack>()
-    private var pendingSession: String? = null
+    private lateinit var streamCache: PlaybackStreamCache
+    private var activeQueueSession: String? = null
+    private var refillJob: Job? = null
     private var recoveryJob: Job? = null
     private var recoveryItem: MediaItem? = null
     private var recoveryAttempts = 0
@@ -76,8 +82,17 @@ class PlaybackService : MediaLibraryService() {
                     .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
                     .build()
         }
+        radioSource = NewPipeMusicSource().also { it.initialize() }
+        streamCache = PlaybackStreamCache { track ->
+            AudioDownloads.resolveForPlayback(this@PlaybackService, track) {
+                radioSource!!.resolveForPlayback(it)
+            }
+        }
+        val dataSource = ResolvingDataSource.Factory(DefaultDataSource.Factory(this, httpFactory)) { spec ->
+            spec.withUri(Uri.parse(streamCache.resolve(spec.uri.toString())))
+        }
         val player = ExoPlayer.Builder(this, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DefaultDataSource.Factory(this, httpFactory)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -88,11 +103,24 @@ class PlaybackService : MediaLibraryService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(true)
             .build()
-        radioSource = NewPipeMusicSource().also { it.initialize() }
         player.addListener(object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 AudioLevels.clear()
+                updateQueueSession(player)
+                if (mediaItem != recoveryItem) {
+                    recoveryJob?.cancel()
+                    recoveryJob = null
+                    recoveryAttempts = 0
+                    recoveryItem = mediaItem
+                }
+                if (player.isPlaying) recordListening(player)
                 maybeExtendQueue(player)
+            }
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                updateQueueSession(player)
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) recordListening(player)
             }
             override fun onPlayerError(error: PlaybackException) {
                 recoverPlayback(player)
@@ -106,7 +134,7 @@ class PlaybackService : MediaLibraryService() {
             var lastPosition = -1L
             while (true) {
                 delay(5_000)
-                val stalled = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING &&
+                val stalled = player.playWhenReady && player.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE && player.playbackState == Player.STATE_BUFFERING &&
                     player.currentPosition == lastPosition
                 if (!stalled) stalledSince = 0L
                 else if (stalledSince == 0L) stalledSince = android.os.SystemClock.elapsedRealtime()
@@ -132,13 +160,8 @@ class PlaybackService : MediaLibraryService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         mediaSession = MediaLibrarySession.Builder(this, player, object : CarMediaLibrary(this@PlaybackService, serviceScope, radioSource!!,
-            { track, session -> queuedItem(track, track.streamUrl, session, false,
-                autoplay = !track.pageUrl.startsWith("content://") && !track.pageUrl.startsWith("file://")) },
-            { session, following ->
-                pendingTracks.clear()
-                pendingTracks.addAll(following)
-                pendingSession = session.takeIf { following.isNotEmpty() }
-            }) {
+            { track, session -> queuedItem(track, session, false,
+                autoplay = canAutoplay(track)) }) {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 if (controller.uid != android.os.Process.myUid()) {
                     val car = canBrowse(session, controller)
@@ -161,7 +184,9 @@ class PlaybackService : MediaLibraryService() {
                     .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
                         .add(SessionCommand("pipes.play_next", Bundle.EMPTY))
                         .add(SessionCommand("pipes.start_radio", Bundle.EMPTY))
-                        .add(SessionCommand("pipes.set_queue", Bundle.EMPTY)).build())
+                        .add(SessionCommand("pipes.set_queue", Bundle.EMPTY))
+                        .add(SessionCommand("pipes.toggle_shuffle", Bundle.EMPTY))
+                        .add(SessionCommand("pipes.add_queue", Bundle.EMPTY)).build())
                     .build()
             }
 
@@ -169,6 +194,28 @@ class PlaybackService : MediaLibraryService() {
                 customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
                 if (controller.uid != android.os.Process.myUid())
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                if (customCommand.customAction == "pipes.toggle_shuffle") {
+                    val order = player.playbackOrder()
+                    val current = player.currentMediaItemIndex
+                    val position = order.indexOf(current)
+                    if (position >= 0) {
+                        val past = order.take(position + 1)
+                        val upcoming = order.drop(position + 1)
+                        if (!player.shuffleModeEnabled) {
+                            player.setShuffleOrder(DefaultShuffleOrder(
+                                (past + upcoming.shuffled()).toIntArray(), System.nanoTime()))
+                        } else {
+                            // Materialize the played prefix before restoring natural order, so no
+                            // unplayed song disappears behind the current physical list index.
+                            PlaybackOrder.movesTo(past + upcoming.sorted()).forEach { (from, to) ->
+                                player.moveMediaItem(from, to)
+                            }
+                        }
+                    }
+                    player.shuffleModeEnabled = !player.shuffleModeEnabled
+                    maybeExtendQueue(player)
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 if (customCommand.customAction == "pipes.play_next") {
                     val current = player.currentMediaItem
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
@@ -178,44 +225,44 @@ class PlaybackService : MediaLibraryService() {
                         return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
                     val track = PlaybackQueueRequests.consume(args.getString("queue_id").orEmpty(), sessionId)?.singleOrNull()
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
-                    val nextIndex = player.currentMediaItemIndex + 1
-                    val existing = PlayNextQueue.existingUpcomingIndex(
+                    val existing = PlaybackOrder.existingUpcoming(
                         (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId },
-                        player.currentMediaItemIndex, track.id)
-                    if (existing != null) player.moveMediaItem(existing, nextIndex)
-                    else player.addMediaItem(nextIndex, queuedItem(track, track.streamUrl, sessionId,
-                        extras.getBoolean(RADIO_METADATA_KEY), extras.getBoolean(AUTO_QUEUE_METADATA_KEY)))
+                        player.playbackOrder(), player.currentMediaItemIndex, track.id)
                     if (player.shuffleModeEnabled) {
-                        val timeline = player.currentTimeline
-                        val order = buildList {
-                            var index = timeline.getFirstWindowIndex(true)
-                            while (index != C.INDEX_UNSET) {
-                                add(index)
-                                index = timeline.getNextWindowIndex(index, Player.REPEAT_MODE_OFF, true)
-                            }
+                        val next = existing ?: player.mediaItemCount.also {
+                            player.addMediaItem(queuedItem(track, sessionId,
+                                extras.getBoolean(RADIO_METADATA_KEY), extras.getBoolean(AUTO_QUEUE_METADATA_KEY)))
                         }
                         player.setShuffleOrder(DefaultShuffleOrder(
-                            PlayNextQueue.prioritize(order, player.currentMediaItemIndex, nextIndex).toIntArray(),
+                            PlayNextQueue.prioritize(player.playbackOrder(), player.currentMediaItemIndex, next).toIntArray(),
                             System.nanoTime()))
+                    } else {
+                        val next = player.currentMediaItemIndex + 1
+                        if (existing != null) player.moveMediaItem(existing, next)
+                        else player.addMediaItem(next, queuedItem(track, sessionId,
+                            extras.getBoolean(RADIO_METADATA_KEY), extras.getBoolean(AUTO_QUEUE_METADATA_KEY)))
                     }
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
-                if (customCommand.customAction == "pipes.set_queue") {
+                if (customCommand.customAction == "pipes.set_queue" || customCommand.customAction == "pipes.add_queue") {
                     val sessionId = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
                     if (sessionId == null || args.getString("session") != sessionId)
                         return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
                     val tracks = PlaybackQueueRequests.consume(args.getString("queue_id").orEmpty(), sessionId)
                         ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
-                    pendingTracks.clear()
-                    pendingSession = sessionId
-                    pendingTracks.addAll(tracks)
+                    appendTracks(player, tracks, sessionId,
+                        player.currentMediaItem?.mediaMetadata?.extras?.getBoolean(RADIO_METADATA_KEY) == true)
+                    val current = player.currentMediaItem!!
+                    val metadata = Bundle(current.mediaMetadata.extras).apply {
+                        putBoolean(AUTO_QUEUE_METADATA_KEY, canAutoplay(trackFromItem(current)))
+                    }
+                    player.replaceMediaItem(player.currentMediaItemIndex,
+                        current.buildUpon().setMediaMetadata(current.mediaMetadata.buildUpon().setExtras(metadata).build()).build())
                     maybeExtendQueue(player)
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 if (customCommand.customAction != "pipes.start_radio") return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                 val current = player.currentMediaItem ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_INVALID_STATE))
-                pendingTracks.clear()
-                pendingSession = null
                 val extras = Bundle(current.mediaMetadata.extras ?: Bundle.EMPTY).apply {
                     putBoolean(RADIO_METADATA_KEY, true)
                     val session = java.util.UUID.randomUUID().toString()
@@ -223,13 +270,23 @@ class PlaybackService : MediaLibraryService() {
                     putBoolean(AUTO_QUEUE_METADATA_KEY, true)
                     putString(AUTO_QUEUE_SESSION_KEY, session)
                 }
-                player.removeMediaItems(player.currentMediaItemIndex + 1, player.mediaItemCount)
+                player.upcomingIndices().sortedDescending().forEach(player::removeMediaItem)
                 player.replaceMediaItem(player.currentMediaItemIndex, current.buildUpon()
                     .setMediaMetadata(current.mediaMetadata.buildUpon().setExtras(extras).build()).build())
                 maybeExtendQueue(player)
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
         }).setSessionActivity(openPlayer).build()
+    }
+
+    private fun updateQueueSession(player: Player) {
+        val session = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
+        if (session == activeQueueSession) return
+        activeQueueSession = session
+        refillJob?.cancel()
+        isRefillingQueue = false
+        queueRetryAfter = 0L
+        mediaSession?.setSessionExtras(Bundle.EMPTY)
     }
 
     private fun recoverPlayback(player: Player) {
@@ -251,6 +308,7 @@ class PlaybackService : MediaLibraryService() {
             return
         }
         recoveryAttempts++
+        item.localConfiguration?.uri?.toString()?.let(streamCache::invalidate)
         recoveryJob = serviceScope.launch {
             delay(1_000L * recoveryAttempts)
             try {
@@ -280,90 +338,117 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private fun maybeExtendQueue(player: Player) {
+    private fun recordListening(player: Player) {
+        val item = player.currentMediaItem ?: return
+        val prefs = getSharedPreferences("pipes", MODE_PRIVATE)
+        val track = trackFromItem(item)
+        val previous = PlaylistStore.load(prefs, "listening_history").flatMap { it.tracks }
+        if (previous.firstOrNull()?.id == track.id) return
+        PlaylistStore.save(prefs, listOf(MusicPlaylist("Recently played", ListeningProfile.record(previous, track))), "listening_history")
+    }
+
+    private fun canAutoplay(track: MusicTrack) =
+        !com.nazcarbon.music.data.OfflinePlayback.isLocal(track)
+
+    private fun appendTracks(player: ExoPlayer, tracks: List<MusicTrack>, session: String, radio: Boolean) {
+        if (tracks.isEmpty()) return
+        val oldCount = player.mediaItemCount
+        val order = player.playbackOrder()
+        val ended = player.playbackState == Player.STATE_ENDED
+        player.addMediaItems(tracks.map { queuedItem(it, session, radio, canAutoplay(it)) })
+        if (player.shuffleModeEnabled) {
+            // DefaultShuffleOrder may insert new items behind the playhead. Keep them reachable.
+            player.setShuffleOrder(DefaultShuffleOrder(
+                (order + (oldCount until player.mediaItemCount).shuffled()).toIntArray(), System.nanoTime()))
+        }
+        if (ended && player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+            player.prepare()
+        }
+    }
+
+    private fun maybeExtendQueue(player: ExoPlayer) {
         val current = player.currentMediaItem ?: return
         val extras = current.mediaMetadata.extras ?: return
         val queueSession = extras.getString(AUTO_QUEUE_SESSION_KEY) ?: return
-        if (pendingSession != null && pendingSession != queueSession) {
-            pendingTracks.clear()
-            pendingSession = null
-        }
-        val playlistQueue = pendingSession == queueSession
-        if (!playlistQueue && !extras.getBoolean(AUTO_QUEUE_METADATA_KEY)) return
-        val remaining = player.mediaItemCount - player.currentMediaItemIndex - 1
-        if (android.os.SystemClock.elapsedRealtime() < queueRetryAfter || remaining > (if (extras.getBoolean(RADIO_METADATA_KEY)) 10 else 3) || isRefillingQueue || (playlistQueue && pendingTracks.isEmpty())) return
-        val seed = MusicTrack(current.mediaId, current.mediaMetadata.title?.toString().orEmpty(),
-            current.mediaMetadata.artist?.toString().orEmpty(), extras.getLong("pipes_duration"),
-            current.mediaMetadata.artworkUri?.toString().orEmpty(), "", extras.getString("pipes_page_url") ?: current.mediaId)
+        if (!extras.getBoolean(AUTO_QUEUE_METADATA_KEY) || player.repeatMode != Player.REPEAT_MODE_OFF) return
+        if (android.os.SystemClock.elapsedRealtime() < queueRetryAfter ||
+            player.upcomingIndices().size > 10 || isRefillingQueue) return
+        val seed = trackFromItem(current)
         val isRadio = extras.getBoolean(RADIO_METADATA_KEY)
         isRefillingQueue = true
         mediaSession?.setSessionExtras(Bundle().apply {
             putBoolean("radio_loading", isRadio)
             putBoolean("autoplay_loading", true)
         })
-        serviceScope.launch {
+        refillJob = serviceScope.launch {
             var added = 0
             try {
                 val source = radioSource ?: return@launch
-                fun sessionStillActive() = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) == queueSession &&
-                    (playlistQueue || player.currentMediaItem?.mediaId == current.mediaId)
-                val existingUrls = (0 until player.mediaItemCount).map {
-                    player.getMediaItemAt(it).mediaMetadata.extras?.getString("pipes_page_url")
-                }.toSet()
-                val radioCandidates = if (playlistQueue) emptyList() else withContext(Dispatchers.IO) {
-                    com.nazcarbon.music.data.MusicRecommendations.radio(seed, source.relatedSongs(seed, getSharedPreferences("pipes", MODE_PRIVATE).getString("recommendation_region", "AUTO") ?: "AUTO").filterNot { it.pageUrl in existingUrls })
-                }
-                val candidates = ArrayDeque(radioCandidates)
-                var examined = 0
-                while (added < (if (isRadio) 30 else 6) && examined < (if (isRadio) 60 else 18) && sessionStillActive()) {
-                    val batch = if (playlistQueue) {
-                        (0 until minOf(3, pendingTracks.size)).map { pendingTracks.removeFirst() }
-                    } else (0 until minOf(3, candidates.size)).map { candidates.removeFirst() }
-                    if (batch.isEmpty()) break
-                    examined += batch.size
-                    val resolved = coroutineScope {
-                        batch.map { track -> async(Dispatchers.IO) {
-                            try { retryPlaybackRequest { AudioDownloads.resolveForPlayback(this@PlaybackService, track) { source.resolveForPlayback(it) } } }
-                            catch (cancelled: CancellationException) { throw cancelled }
-                            catch (_: Exception) { null }
-                        } }.awaitAll()
-                    }
-                    if (!sessionStillActive()) return@launch
-                    for (track in resolved.filterNotNull()) {
-                        val ended = player.playbackState == Player.STATE_ENDED
-                        player.addMediaItem(queuedItem(track, track.streamUrl, queueSession, isRadio, autoplay = !playlistQueue))
-                        added++
-                        if (ended && player.hasNextMediaItem()) {
-                            player.seekToNextMediaItem()
-                            player.prepare()
+                fun sessionStillActive() = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY) == queueSession
+                val history = (0 until player.mediaItemCount).map { trackFromItem(player.getMediaItemAt(it)) }
+                val region = getSharedPreferences("pipes", MODE_PRIVATE).getString("recommendation_region", "AUTO") ?: "AUTO"
+                // Try the latest song and a different recent seed if a source radio is exhausted.
+                val seeds = (listOf(seed) + history.asReversed()).distinctBy { it.pageUrl }
+                    .filter { canAutoplay(it) }.take(3)
+                val fallbackCandidates = mutableListOf<MusicTrack>()
+                for (anchor in seeds) {
+                    val candidates = try {
+                        withContext(Dispatchers.IO) {
+                            retryPlaybackRequest { source.relatedSongs(anchor, region) }
                         }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { emptyList() }
+                    if (!sessionStillActive()) return@launch
+                    fallbackCandidates += candidates
+                    val fresh = MusicRecommendations.discovery(seed, candidates, history)
+                    if (fresh.isNotEmpty()) {
+                        appendTracks(player, fresh, queueSession, isRadio)
+                        added = fresh.size
+                        break
                     }
+                }
+                if (added == 0 && fallbackCandidates.isNotEmpty() && sessionStillActive()) {
+                    val order = player.playbackOrder()
+                    val position = order.indexOf(player.currentMediaItemIndex)
+                    val recent = order.take(position).takeLast(8).map { trackFromItem(player.getMediaItemAt(it)) }
+                    val queued = (listOf(player.currentMediaItemIndex) + player.upcomingIndices())
+                        .map { trackFromItem(player.getMediaItemAt(it)) }
+                    val continued = MusicRecommendations.continuation(seed, fallbackCandidates, queued, recent)
+                    appendTracks(player, continued, queueSession, isRadio)
+                    added = continued.size
                 }
                 if (added == 0) mediaSession?.setSessionExtras(Bundle().apply {
-                    putString("queue_error", if (playlistQueue) "Couldn't match the remaining playlist songs." else "Radio couldn't find playable songs. Try again.")
+                    putString("queue_error", "Couldn't find more related songs. Autoplay will retry.")
                 })
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
-                mediaSession?.setSessionExtras(Bundle().apply { putString("queue_error", "Couldn't load related music. Try radio again.") })
+                mediaSession?.setSessionExtras(Bundle().apply { putString("queue_error", "Couldn't load more music. Autoplay will retry.") })
             } finally {
-                isRefillingQueue = false
-                queueRetryAfter = if (added == 0) android.os.SystemClock.elapsedRealtime() + 15_000 else 0L
-                val previous = mediaSession?.sessionExtras ?: Bundle.EMPTY
-                mediaSession?.setSessionExtras(Bundle(previous).apply {
-                    putBoolean("radio_loading", false)
-                    putBoolean("autoplay_loading", false)
-                })
-                val activeSession = player.currentMediaItem?.mediaMetadata?.extras?.getString(AUTO_QUEUE_SESSION_KEY)
-                if (activeSession != queueSession || (!playlistQueue && player.currentMediaItem?.mediaId != current.mediaId) || (playlistQueue && added > 0 && pendingTracks.isNotEmpty() &&
-                    player.mediaItemCount - player.currentMediaItemIndex - 1 <= 3)) maybeExtendQueue(player)
+                if (activeQueueSession == queueSession) {
+                    isRefillingQueue = false
+                    queueRetryAfter = if (added == 0) android.os.SystemClock.elapsedRealtime() + 15_000 else 0L
+                    val previous = mediaSession?.sessionExtras ?: Bundle.EMPTY
+                    mediaSession?.setSessionExtras(Bundle(previous).apply {
+                        putBoolean("radio_loading", false)
+                        putBoolean("autoplay_loading", false)
+                    })
+                }
             }
         }
     }
 
-    private fun queuedItem(track: MusicTrack, url: String, queueSession: String, isRadio: Boolean, autoplay: Boolean) =
+    private fun trackFromItem(item: MediaItem): MusicTrack {
+        val extras = item.mediaMetadata.extras
+        return MusicTrack(item.mediaId, item.mediaMetadata.title?.toString().orEmpty(),
+            item.mediaMetadata.artist?.toString().orEmpty(), extras?.getLong("pipes_duration") ?: 0L,
+            item.mediaMetadata.artworkUri?.toString().orEmpty(), "", extras?.getString("pipes_page_url") ?: item.mediaId)
+    }
+
+    private fun queuedItem(track: MusicTrack, queueSession: String, isRadio: Boolean, autoplay: Boolean) =
         MediaItem.Builder()
             .setMediaId(track.id)
-            .setUri(Uri.parse(url))
+            .setUri(Uri.parse(PlaybackStreams.encode(track)))
             .setMediaMetadata(
                 MediaMetadata.Builder()
                     .setTitle(track.title)

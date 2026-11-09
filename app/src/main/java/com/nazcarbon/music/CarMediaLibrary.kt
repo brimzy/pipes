@@ -28,7 +28,6 @@ internal open class CarMediaLibrary(
     private val scope: CoroutineScope,
     private val source: NewPipeMusicSource,
     private val playable: (MusicTrack, String) -> MediaItem,
-    private val prepareQueue: (String, List<MusicTrack>) -> Unit,
 ) : MediaLibrarySession.Callback {
     private var selectionGeneration = 0
     private val preferences = context.getSharedPreferences("pipes", Context.MODE_PRIVATE)
@@ -156,8 +155,8 @@ internal open class CarMediaLibrary(
             val resolved = withContext(Dispatchers.IO) { withTimeout(30_000) { AudioDownloads.resolveForPlayback(context, selection.track) { source.resolveForPlayback(it) } } }
             check(request == selectionGeneration) { "Playback selection changed." }
             val token = UUID.randomUUID().toString()
-            prepareQueue(token, selection.following)
-            MediaSession.MediaItemsWithStartPosition(listOf(playable(resolved, token)), 0, startPositionMs.coerceAtLeast(0))
+            val queue = (listOf(resolved) + selection.following).map { playable(it, token) }
+            MediaSession.MediaItemsWithStartPosition(queue, 0, startPositionMs.coerceAtLeast(0))
         }
     }
 

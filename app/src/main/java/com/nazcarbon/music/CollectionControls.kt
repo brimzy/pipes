@@ -33,7 +33,7 @@ internal fun downloadState(status: Int?): DownloadState = when (status) {
 internal val LocalDownloadStates = staticCompositionLocalOf<Map<String, DownloadState>> { emptyMap() }
 
 @Composable internal fun trackDownloadState(track: MusicTrack): DownloadState =
-    if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://") || track.id.startsWith("download:")) DownloadState.SAVED
+    if (com.nazcarbon.music.data.OfflinePlayback.isLocal(track) || track.id.startsWith("download:")) DownloadState.SAVED
     else LocalDownloadStates.current[track.id] ?: DownloadState.AVAILABLE
 
 @Composable internal fun DownloadStatusIcon(track: MusicTrack, modifier: Modifier = Modifier) {

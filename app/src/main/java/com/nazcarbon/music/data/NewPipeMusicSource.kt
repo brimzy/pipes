@@ -504,7 +504,7 @@ class NewPipeMusicSource {
     }
 
     fun resolveForPlayback(track: MusicTrack, forceRefresh: Boolean = false): MusicTrack =
-        if (track.pageUrl.startsWith("content://") || track.pageUrl.startsWith("file://")) track.copy(streamUrl = track.pageUrl)
+        if (OfflinePlayback.isLocal(track)) track.copy(streamUrl = track.pageUrl)
         else resolveAudio(playableTrack(track), forceRefresh).let { resolved ->
             if (track.pageUrl.startsWith("spotify-search:")) resolved.copy(title = track.title, artist = track.artist) else resolved
         }
