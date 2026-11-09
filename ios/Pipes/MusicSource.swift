@@ -43,9 +43,52 @@ enum MusicSource {
     }
     static func radio(_ seed: Track, region: String) async throws -> [Track] {
         guard let id = seed.videoID else { return [] }
-        let songs = parse(try await request("next", body: ["videoId": id, "playlistId": "RDAMVM" + id], region: region))
+        var response = try await request("next", body: ["videoId": id, "playlistId": "RDAMVM" + id], region: region)
+        var songs = parse(response)
+        var visited = Set<String>()
+        for _ in 0..<3 {
+            guard songs.count < 60, let token = continuation(response), visited.insert(token).inserted else { break }
+            do {
+                response = try await request("next", body: ["continuation": token], region: region)
+                try Task.checkCancellation()
+                songs = LibraryRules.unique(songs + parse(response))
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+                break
+            }
+        }
         if songs.isEmpty { return try await searchSongs(seed.artist + " " + seed.title + " radio", region: region) }
         return songs
+    }
+    static func discovery(_ seeds: [Track], region: String, refresh: Bool = false) async throws -> [Track] {
+        var songs: [Track] = []
+        for seed in seeds.prefix(3) {
+            do {
+                let related = try await radio(seed, region: region)
+                try Task.checkCancellation()
+                songs += LibraryRules.recommendations(related, excluding: seeds + songs).prefix(10)
+            } catch {
+                if Task.isCancelled { throw CancellationError() }
+            }
+        }
+        if songs.isEmpty {
+            let query = seeds.first.map { $0.artist + " songs" } ?? "indie pop soul new music"
+            songs = try await explore(query, region: region, refresh: refresh)
+        }
+        return Array(LibraryRules.recommendations(songs, excluding: seeds).prefix(30))
+    }
+    static func continuation(_ root: Any) -> String? {
+        if let object = root as? [String: Any] {
+            if let next = object["nextContinuationData"] as? [String: Any], let token = next["continuation"] as? String { return token }
+            if let endpoint = object["continuationEndpoint"] as? [String: Any],
+               let command = endpoint["continuationCommand"] as? [String: Any], let token = command["token"] as? String { return token }
+            for key in object.keys.sorted() {
+                if let value = object[key], let token = continuation(value) { return token }
+            }
+        } else if let array = root as? [Any] {
+            for value in array { if let token = continuation(value) { return token } }
+        }
+        return nil
     }
     static func explore(_ query: String, region: String, refresh: Bool = false) async throws -> [Track] {
         let key = region + ":" + query

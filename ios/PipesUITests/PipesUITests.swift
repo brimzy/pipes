@@ -35,7 +35,7 @@ final class PipesUITests: XCTestCase {
         app.buttons["Settings"].tap()
         let version = app.descendants(matching: .any)["pipes-version"]
         XCTAssertTrue(version.waitForExistence(timeout: 5))
-        XCTAssertEqual(version.label, "Pipes version 5.1.55")
+        XCTAssertEqual(version.label, "Pipes version 5.1.60")
         app.buttons["Learn Pipes"].tap()
         XCTAssertTrue(app.staticTexts["Get to know the player"].waitForExistence(timeout: 5))
     }

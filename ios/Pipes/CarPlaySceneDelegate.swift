@@ -54,7 +54,7 @@ final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicatio
     }
 
     private func sections(for tracks: [Track]) -> [CPListSection] {
-        let items = tracks.prefix(CPListTemplate.maximumItemCount).enumerated().map { index, track -> CPListItem in
+        let items = tracks.prefix(CPListTemplate.maximumItemCount).map { track -> CPListItem in
             let item = CPListItem(text: track.title, detailText: track.artist, image: UIImage(systemName: "music.note"))
             item.isPlaying = library.current?.id == track.id && library.isPlaying
             item.handler = { [weak self] _, completion in
@@ -62,8 +62,7 @@ final class CarPlaySceneDelegate: NSObject, @preconcurrency CPTemplateApplicatio
                     defer { completion() }
                     guard let self else { return }
                     guard !self.library.carPlayable([track]).isEmpty else { self.refresh(); return }
-                    self.library.queue = Array(tracks.dropFirst(index + 1))
-                    self.library.play(track)
+                    self.library.play(track, from: tracks)
                     self.showNowPlaying()
                 }
             }

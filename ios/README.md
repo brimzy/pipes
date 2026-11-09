@@ -1,6 +1,6 @@
 # Pipes for iPhone & iPad
 
-Native SwiftUI adaptation of **Pipes 5.1.55** for **iOS 17+**. Home, Search, Explore and Library share the current app's charcoal surfaces, artwork atmosphere and cyan active controls.
+Native SwiftUI adaptation of **Pipes 5.1.60** for **iOS 17+**. Home, Search, Explore and Library share the current app's charcoal surfaces, artwork atmosphere and cyan active controls.
 
 ## Install
 
@@ -10,9 +10,9 @@ The IPA is **unsigned**. Sign/install it with your Apple account using a compati
 
 ## What's current
 
-- Home recommendations based on the playing online song or your liked artists; Explore moods/genres with a bounded session cache, refresh and retry.
+- Home recommendations based on recent listening, liked songs, and saved playlist/album recordings; Explore moods/genres with a bounded session cache, refresh and retry.
 - Search songs/artists, YouTube videos/public playlists and Spotify song links. Recent searches stay on your device; Settings lets you choose a recommendation region. Upstream endpoints are unofficial and may change.
-- Persistent likes, queue, Play next, queue reordering/removal, shuffle, repeat, previous/next, and related-song radio. Starting radio on the current song preserves its position.
+- Persistent likes and recent listening, full playlist queues, Play next, queue reordering/removal, shuffle in the displayed order, repeat, previous/next, and continuously refilling online autoplay/radio. Late results resume an ended queue while respecting pause and stop. Starting radio on the current song preserves its position.
 - Named playlists and custom albums: create, rename, change type, bulk-select songs, add all, remove entries or delete the collection. Duplicates are skipped. Collection copies are independent; deleting a collection leaves audio files intact.
 - Custom image and animated GIF covers (up to 20 MB / 16 megapixels), copied into app storage. Library, the collection and the Add to… picker share the cover. Reduce Motion displays a still image. Change or restore the cover without changing songs.
 - Full player, waveform preview with release-to-seek, a compact player, and mini-player title swipes (left: next; right: previous). Minimize continues; Stop clears the queue. The waveform is a seek control; the Android decoded audio spectrum is not ported.
@@ -24,7 +24,7 @@ Existing 5.0 local file and favorite records use the same storage keys, and the 
 
 ## Playback differences from Android
 
-Online playback uses the **visible YouTube embedded player**. Keep Pipes open. Tap Play inside the video if autoplay is blocked; recordings that prohibit embedding can be opened in YouTube. The embedded player stays alive when minimized, reports position/state, and advances the queue when a video ends. Online background playback is not supported.
+Online playback uses the **visible YouTube embedded player**. Keep Pipes open. Tap Play inside the video if autoplay is blocked; recordings that prohibit embedding can be opened in YouTube. The embedded player stays alive when minimized, reports position/state, and advances the queue when a video ends. Online background playback is not supported; leaving Pipes pauses the embedded player. Local audio continues in the background and yields to audio interruptions.
 
 Supported local codecs depend on iOS AVFoundation. Local files retain their original format; a download does not become lossless. Direct audio links must use HTTPS, a public hostname without embedded credentials or a custom port, and a supported audio-file extension. This input validation is not a network firewall; use hosts you trust. No analytics or crash-reporting SDK is included. App files are not encrypted by Pipes and may be included in iOS backups. Online providers and chosen download hosts receive your network requests.
 

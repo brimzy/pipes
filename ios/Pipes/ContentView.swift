@@ -16,6 +16,7 @@ private enum AppSheet: Identifiable {
 
 struct ContentView: View {
     @EnvironmentObject var library: MusicLibrary
+    @Environment(\.scenePhase) private var scenePhase
     @State private var tab = 0
     @State private var importing = false
     @State private var showingPlayer = false
@@ -98,6 +99,7 @@ struct ContentView: View {
                     .allowsHitTesting(false)
             }
         }
+        .onChange(of: scenePhase) { _, phase in library.setForeground(phase == .active) }
         .onChange(of: library.current?.id) { _, id in if id == nil { showingPlayer = false } }
         .task { if !tutorialOffered { tutorialOffered = true; sheet = .tutorial } }
         .environment(\.showPlayer, { sheet = nil; showingPlayer = true })
@@ -283,13 +285,15 @@ struct DiscoveryView: View {
             }.padding(20)
         }
         .refreshable { await load(refresh: true) }
-        .task(id: query + library.region) { await load() }
+        .task(id: query + library.region + (isHome ? library.discoverySeeds.map(\.id).joined(separator: "|") : "")) { await load() }
     }
     private func load(refresh: Bool = false) async {
         loading = true; failure = nil
         defer { loading = false }
         do {
-            let fetched = try await MusicSource.explore(query, region: library.region, refresh: refresh)
+            let fetched = try await (isHome
+                ? MusicSource.discovery(library.discoverySeeds, region: library.region, refresh: refresh)
+                : MusicSource.explore(query, region: library.region, refresh: refresh))
             try Task.checkCancellation(); songs = fetched
         } catch { if !Task.isCancelled { failure = error.localizedDescription } }
     }

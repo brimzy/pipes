@@ -21,7 +21,29 @@ final class MusicLibrary: ObservableObject {
     @Published var downloading = false
     @Published var radioLoading = false
     @Published var radioSeed: Track?
-    @Published var shuffle = false
+    @Published var shuffle = false {
+        didSet {
+            guard oldValue != shuffle else { return }
+            if shuffle {
+                savedQueueOrder = queue.map(\.id)
+                var ordered = queue.shuffled()
+                if let forcedNextID, let next = ordered.first(where: { $0.id == forcedNextID }) {
+                    ordered = LibraryRules.playNext(next, queue: ordered)
+                }
+                queue = ordered
+            } else { queue = LibraryRules.restoreOrder(queue, savedIDs: savedQueueOrder, forcedID: forcedNextID) }
+        }
+    }
+    @Published var recentlyPlayed: [Track] = [] { didSet { persist(recentlyPlayed, "recentlyPlayed") } }
+    private(set) var playbackRequested = false
+    private(set) var isForeground = true
+    private var waitingForQueue = false
+    private var autoplayEnabled = false
+    private var queueSession = UUID()
+    private var savedQueueOrder: [String] = []
+    private var retryTask: Task<Void, Never>?
+    private let playbackEnabled: Bool
+    private let radioProvider: (Track, String) async throws -> [Track]
     @Published var repeatMode: RepeatMode = .off
     @Published var recentSearches: [String] = [] { didSet { persist(recentSearches, "recentSearches") } }
     @Published var region = UserDefaults.standard.string(forKey: "region") ?? "US" {
@@ -39,12 +61,14 @@ final class MusicLibrary: ObservableObject {
     private var status: NSKeyValueObservation?
     private var searchTask: Task<Void, Never>?
     private var radioTask: Task<Void, Never>?
-    private var radioSeen = Set<String>()
     private var resumeAfterInterruption = false
     private let defaults: UserDefaults
     let documents: URL
 
-    init(defaults: UserDefaults = .standard, documents: URL? = nil, configurePlayback: Bool = true) {
+    init(defaults: UserDefaults = .standard, documents: URL? = nil, configurePlayback: Bool = true,
+         radioProvider: @escaping (Track, String) async throws -> [Track] = { try await MusicSource.radio($0, region: $1) }) {
+        self.playbackEnabled = configurePlayback
+        self.radioProvider = radioProvider
         self.defaults = defaults
         self.documents = documents ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         tracks = restore("localTracks")
@@ -52,6 +76,7 @@ final class MusicLibrary: ObservableObject {
         queue = restore("queue")
         collections = restore("collections")
         recentSearches = restore("recentSearches")
+        recentlyPlayed = restore("recentlyPlayed")
         guard configurePlayback else { return }
         do { try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default) }
         catch { self.error = error.localizedDescription }
@@ -67,7 +92,7 @@ final class MusicLibrary: ObservableObject {
         ended = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main) { [weak self] note in
             Task { @MainActor in
                 guard let self, let item = note.object as? AVPlayerItem, item === self.player.currentItem else { return }
-                self.advance(automatic: true, localOnly: true)
+                self.advance(automatic: true)
             }
         }
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
@@ -76,11 +101,12 @@ final class MusicLibrary: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 if type == AVAudioSession.InterruptionType.began.rawValue {
-                    self.resumeAfterInterruption = self.isPlaying
-                    self.pause()
-                } else if self.resumeAfterInterruption && AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) {
+                    self.resumeAfterInterruption = self.playbackRequested
+                    self.pause(clearInterruption: false)
+                } else {
+                    let resume = self.resumeAfterInterruption
                     self.resumeAfterInterruption = false
-                    self.resume()
+                    if resume && AVAudioSession.InterruptionOptions(rawValue: options).contains(.shouldResume) { self.resume() }
                 }
             }
         }
@@ -138,8 +164,7 @@ final class MusicLibrary: ObservableObject {
         }
         tracks += imported
         if let first = imported.first {
-            queue = Array(imported.dropFirst())
-            play(first)
+            play(first, from: imported)
         }
     }
     func play(_ track: Track, rememberHistory: Bool = true) {
@@ -149,9 +174,15 @@ final class MusicLibrary: ObservableObject {
         }
         if !cycle.contains(where: { $0.id == track.id }) { cycle.append(track) }
         pause()
+        playbackRequested = true
+        waitingForQueue = false
+        error = nil
         status = nil
         current = track
+        if track.localFilename == nil && track.videoID != nil { autoplayEnabled = true }
         position = 0; duration = 0
+        defer { refillQueue() }
+        if !playbackEnabled { isPlaying = true; recordListening(); return }
         player.replaceCurrentItem(with: nil)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         guard let filename = track.localFilename else {
@@ -177,35 +208,70 @@ final class MusicLibrary: ObservableObject {
         resume()
     }
     func play(_ track: Track, from songs: [Track]) {
-        radioTask?.cancel(); radioSeed = nil; radioLoading = false
-        cycle = []; forcedNextID = nil
-        let index = songs.firstIndex { $0.id == track.id } ?? 0
-        queue = LibraryRules.unique(Array(songs.dropFirst(index + 1))).filter { $0.id != track.id }
+        resetQueueSession()
+        radioSeed = nil
+        cycle = LibraryRules.unique([track] + songs)
+        forcedNextID = nil
+        autoplayEnabled = track.videoID != nil && track.localFilename == nil
+        savedQueueOrder = LibraryRules.upcoming(track, in: songs, shuffle: false).map(\.id)
+        queue = LibraryRules.upcoming(track, in: songs, shuffle: shuffle)
         play(track)
     }
-    func resume() {
-        guard current != nil else { return }
-        do { try AVAudioSession.sharedInstance().setActive(true) }
-        catch { self.error = error.localizedDescription; return }
-        if current?.filename != nil { player.play(); isPlaying = true; updateNowPlaying() }
-        else { embeddedPlayer.command("playVideo()") }
+    func playQueued(_ track: Track) {
+        guard let index = queue.firstIndex(where: { $0.id == track.id }) else { return }
+        queue.removeFirst(index + 1)
+        forcedNextID = nil
+        play(track)
     }
-    func pause() {
-        player.pause()
-        if current?.videoID != nil { embeddedPlayer.command("pauseVideo()") }
-        isPlaying = false; updateNowPlaying()
+    private func resetQueueSession() {
+        queueSession = UUID()
+        radioTask?.cancel(); retryTask?.cancel()
+        radioTask = nil; retryTask = nil; radioLoading = false; waitingForQueue = false
+    }
+    func resume() {
+        guard let current else { return }
+        resumeAfterInterruption = false
+        playbackRequested = true
+        if !playbackEnabled { isPlaying = true; recordListening(); refillQueue(); return }
+        if current.localFilename == nil && !isForeground { return }
+        do { try AVAudioSession.sharedInstance().setActive(true) }
+        catch { self.error = error.localizedDescription; playbackRequested = false; return }
+        if current.localFilename != nil { player.play(); isPlaying = true; recordListening(); updateNowPlaying() }
+        else { embeddedPlayer.command("playVideo()") }
+        refillQueue()
+    }
+    func pause(clearInterruption: Bool = true) {
+        if clearInterruption { resumeAfterInterruption = false }
+        playbackRequested = false; waitingForQueue = false
+        if playbackEnabled {
+            player.pause()
+            if current?.videoID != nil { embeddedPlayer.command("pauseVideo()") }
+        }
+        isPlaying = false
+        if playbackEnabled { updateNowPlaying() }
     }
     func stop() {
-        pause(); radioTask?.cancel(); radioSeed = nil; radioLoading = false
-        current = nil; queue = []; history = []; cycle = []; forcedNextID = nil
-        player.replaceCurrentItem(with: nil); embeddedPlayer.clear()
-        position = 0; duration = 0; updateNowPlaying()
+        pause(); resetQueueSession(); radioSeed = nil; autoplayEnabled = false
+        current = nil; queue = []; history = []; cycle = []; forcedNextID = nil; savedQueueOrder = []
+        if playbackEnabled {
+            player.replaceCurrentItem(with: nil); embeddedPlayer.clear()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+        position = 0; duration = 0
+        if playbackEnabled { updateNowPlaying() }
     }
-    func addToQueue(_ songs: [Track]) { queue = LibraryRules.unique(queue + songs); notice = "Added to queue" }
+    func addToQueue(_ songs: [Track]) {
+        let additions = LibraryRules.unique(songs).filter { song in !queue.contains { $0.id == song.id } }
+        savedQueueOrder += additions.map(\.id)
+        queue += additions
+        cycle = LibraryRules.unique(cycle + additions)
+        notice = "Added to queue"
+    }
     func playNext(_ track: Track) {
-        guard current != nil else { play(track); return }
+        guard current != nil else { play(track, from: [track]); return }
         queue = LibraryRules.playNext(track, queue: queue)
         forcedNextID = track.id
+        cycle = LibraryRules.unique(cycle + [track])
         notice = "Playing next"
     }
     func next() { advance() }
@@ -213,17 +279,25 @@ final class MusicLibrary: ObservableObject {
         if automatic && repeatMode == .one { seek(0); resume(); return }
         var candidates = localOnly ? carPlayable(queue) : queue
         if candidates.isEmpty && repeatMode == .all {
-            queue = LibraryRules.unique(cycle)
+            queue = shuffle ? cycle.shuffled() : cycle
             candidates = localOnly ? carPlayable(queue) : queue
         }
-        let next = LibraryRules.nextTrack(in: candidates, shuffle: shuffle, forcedID: forcedNextID)
+        // Queue is already in its visible playback order, including shuffle and Play next.
+        let next = LibraryRules.nextTrack(in: candidates, shuffle: false, forcedID: forcedNextID)
         forcedNextID = nil
         guard let next else {
-            pause(); return
+            isPlaying = false
+            if playbackRequested && autoplayEnabled && repeatMode == .off && !localOnly {
+                waitingForQueue = true
+                refillQueue()
+            } else { pause() }
+            return
+        }
+        if next.localFilename == nil && !isForeground {
+            isPlaying = false; waitingForQueue = playbackRequested; return
         }
         queue.removeAll { $0.id == next.id }
         play(next)
-        if queue.count < 4, let seed = radioSeed { fillRadio(seed) }
     }
     func previous(localOnly: Bool = false) {
         if position > 3 { seek(0); return }
@@ -233,6 +307,17 @@ final class MusicLibrary: ObservableObject {
             play(track, rememberHistory: false); return
         }
         seek(0)
+    }
+    func recordListening() {
+        guard let current else { return }
+        recentlyPlayed = Array(([current] + recentlyPlayed.filter { $0.id != current.id }).prefix(100))
+    }
+    var discoverySeeds: [Track] {
+        LibraryRules.discoverySeeds(current: current, recent: recentlyPlayed, favorites: favorites, collections: collections)
+    }
+    func setForeground(_ foreground: Bool) {
+        isForeground = foreground
+        if !foreground && current?.localFilename == nil { pause() }
     }
     func seek(_ seconds: Double) {
         guard seconds.isFinite, duration > 0 else { return }
@@ -275,29 +360,54 @@ final class MusicLibrary: ObservableObject {
         }
     }
     func startRadio(_ track: Track) {
-        guard track.videoID != nil else { error = "Radio needs an online song."; return }
-        radioTask?.cancel(); radioLoading = false
-        radioSeed = track; radioSeen = [track.id]; queue = []; cycle = []; forcedNextID = nil
+        guard track.videoID != nil && track.localFilename == nil else { error = "Radio needs an online song."; return }
+        resetQueueSession()
+        radioSeed = track; autoplayEnabled = true
+        queue = []; cycle = [track]; forcedNextID = nil; savedQueueOrder = []
         if current?.id != track.id { play(track) }
-        fillRadio(track)
+        refillQueue()
     }
-    private func fillRadio(_ seed: Track) {
-        guard !radioLoading else { return }
+    func refillQueue() {
+        guard autoplayEnabled, repeatMode == .off, queue.count <= 10, !radioLoading,
+              let current, current.localFilename == nil, current.videoID != nil else { return }
+        retryTask?.cancel(); retryTask = nil
         radioLoading = true
+        let session = queueSession
         let region = region
+        let seeds = Array(LibraryRules.unique([current] + recentlyPlayed).filter { $0.localFilename == nil && $0.videoID != nil }.prefix(3))
         radioTask = Task {
-            do {
-                let songs = try await MusicSource.radio(seed, region: region)
-                try Task.checkCancellation()
-                guard radioSeed?.id == seed.id else { return }
-                let additions = songs.filter { !radioSeen.contains($0.id) && $0.id != current?.id }
-                queue = LibraryRules.unique(queue + additions).prefix(30).map { $0 }
-                radioSeen.formUnion(additions.map(\.id))
-                if additions.isEmpty { notice = "No more related songs. Try another radio seed." }
-            } catch {
-                if !Task.isCancelled { self.error = "Radio: " + error.localizedDescription }
+            defer { if session == queueSession { radioLoading = false } }
+            var pool: [Track] = []
+            var additions: [Track] = []
+            for seed in seeds {
+                do {
+                    let songs = try await radioProvider(seed, region)
+                    try Task.checkCancellation()
+                    guard session == queueSession else { return }
+                    pool += songs
+                    additions = Array(LibraryRules.recommendations(songs, excluding: cycle + queue + [self.current].compactMap { $0 }).prefix(30))
+                    if !additions.isEmpty { break }
+                } catch {
+                    if Task.isCancelled || session != queueSession { return }
+                }
             }
-            if !Task.isCancelled { radioLoading = false }
+            guard !Task.isCancelled, session == queueSession else { return }
+            if additions.isEmpty {
+                additions = LibraryRules.continuation(pool, queued: queue + [self.current].compactMap { $0 }, recent: Array(recentlyPlayed.prefix(8)))
+            }
+            if !additions.isEmpty {
+                savedQueueOrder += additions.map(\.id)
+                queue = LibraryRules.unique(queue + (shuffle ? additions.shuffled() : additions))
+                cycle = LibraryRules.unique(cycle + additions)
+                if waitingForQueue && playbackRequested { waitingForQueue = false; advance() }
+            } else {
+                notice = "Couldn't load more related songs. Autoplay will retry."
+                retryTask = Task {
+                    try? await Task.sleep(for: .seconds(15))
+                    guard !Task.isCancelled, session == queueSession, playbackRequested else { return }
+                    refillQueue()
+                }
+            }
         }
     }
     @discardableResult

@@ -1,4 +1,12 @@
-# Pipes for iPhone & iPad 5.1.55
+# Pipes for iPhone & iPad 5.1.60
+
+- Shuffle now follows the displayed upcoming queue. Starting shuffled playback includes the whole playlist, and toggling shuffle or using Play next preserves the remaining songs.
+- Online autoplay works after single songs and playlists, with up to 30 related songs per batch and automatic refills/retries. Late results can restart an exhausted queue without overriding pause, stop, or a new playback selection. Exhausted mixes can reuse older related songs.
+- Home uses recent listening, likes, and saved playlists/albums as recommendation seeds. Listening history stays on your device; unplayed suggestions do not become taste signals.
+- Queue selections preserve the remaining queue. Repeat-all returns to the full collection. Embedded-player callbacks ignore stale loads and repeated end events; unavailable recordings can advance to the next song.
+- Local audio retains background playback and audio interruption handling. Online YouTube playback requires Pipes open and pauses when leaving the app.
+
+
 
 Updated from the original 5.0 preview to the current 5.1 app experience. Requires iOS 17 or later.
 

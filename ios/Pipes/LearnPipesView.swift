@@ -10,7 +10,7 @@ private struct Lesson {
 
 private let lessons = [
     Lesson(title: "Find your next song", icon: "magnifyingglass", tips: [
-        ("Four ways in", "Home follows the playing song or your liked artists. Search finds recordings. Explore offers moods and genres. Library keeps your likes, collections and offline audio."),
+        ("Four ways in", "Home follows recent listening, likes, and saved playlists. Search finds recordings. Explore offers moods and genres. Library keeps your likes, collections and offline audio."),
         ("Search links", "Paste a YouTube video or public playlist, or a Spotify song link. Spotify provides metadata; playable matches come from YouTube Music. Spotify playlist import is still Android-only."),
         ("Bring your own music", "The folder button imports audio from Files. Pipes copies the files so moving the original doesn't remove them.")
     ], action: "Try Search", destination: 1),
@@ -41,7 +41,7 @@ private let lessons = [
     ], action: "See offline audio", destination: 3),
     Lesson(title: "Settle in", icon: "gearshape", tips: [
         ("Find Settings", "The gear button is available on Home, Search, Explore and Library. Minimize the full player first."),
-        ("Tune recommendations", "Choose a recommendation region in Settings. Home also follows your current online song or your liked artists."),
+        ("Tune recommendations", "Choose a recommendation region in Settings. Home also follows recent listening, likes, and saved playlists."),
         ("Keep learning", "Find newer iPhone releases through Settings. Install them using the same signing identity to preserve your library. Learn Pipes resumes this guide or replays it after finishing.")
     ], action: "Open Settings", destination: 4)
 ]

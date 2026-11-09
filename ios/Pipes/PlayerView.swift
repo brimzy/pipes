@@ -220,9 +220,9 @@ struct QueueView: View {
                     Section("Now playing") { Text(current.title).font(.headline); Text(current.artist).foregroundStyle(.secondary) }
                 }
                 Section("Up next · \(library.queue.count)") {
-                    if library.queue.isEmpty { Text("Use a song's menu to Play next or Add to queue.").foregroundStyle(.secondary) }
+                    if library.queue.isEmpty { Text(library.current?.videoID != nil ? "Autoplay keeps finding related songs while Pipes is open." : "Use a song's menu to Play next or Add to queue.").foregroundStyle(.secondary) }
                     ForEach(library.queue) { track in
-                        TrackRow(track: track, songs: library.queue)
+                        TrackRow(track: track, onSelect: { library.playQueued(track); dismiss() })
                     }
                     .onDelete { library.queue.remove(atOffsets: $0) }
                     .onMove { library.queue.move(fromOffsets: $0, toOffset: $1) }
