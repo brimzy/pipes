@@ -2022,6 +2022,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     hasNext: Boolean,
     onDownload: () -> Unit,
 ) {
+    var showLyrics by remember { mutableStateOf(false) }
+    BackHandler(showLyrics) { showLyrics = false }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun feedback(action: () -> Unit) {
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
@@ -2044,12 +2046,19 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
                 .padding(vertical = if (compact) 8.dp else 12.dp), contentAlignment = Alignment.Center) {
                 val artworkSize = minOf(maxWidth, maxHeight, 380.dp).coerceAtLeast(0.dp)
-                if (artworkSize > 0.dp) SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
+                if (showLyrics) {
+                    key(track.id) { PlayerLyrics(track, duration, position, onSeek.takeIf { seekable }) }
+                } else if (artworkSize > 0.dp) {
+                    SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
+                }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
+                }
+                TextButton(onClick = { feedback { showLyrics = !showLyrics } }) {
+                    Text(if (showLyrics) "Artwork" else "Lyrics", color = if (showLyrics) PipesPalette.Cyan else Ink)
                 }
                 IconButton(onClick = { feedback(onLike) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                     if (liked) "Unlike song" else "Like song", tint = if (liked) PipesPalette.Favorite else Ink) }
