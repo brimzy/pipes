@@ -219,6 +219,8 @@ class MainActivity : ComponentActivity() {
                 val exploreScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 val discoveryScroll = androidx.compose.foundation.lazy.rememberLazyListState()
                 var page by remember { mutableStateOf("Home") }
+                var homeRefreshRequest by remember { mutableIntStateOf(0) }
+                var homeRefreshHandled by remember { mutableIntStateOf(0) }
                 var query by remember { mutableStateOf("") }
                 var importProgress by remember { mutableStateOf<String?>(null) }
                 var results by remember { mutableStateOf<List<MusicTrack>>(emptyList()) }
@@ -1170,7 +1172,9 @@ class MainActivity : ComponentActivity() {
                                 "Explore" -> ExploreScreen(exploreFeed, current, exploreSelection, { exploreSelection = it }, exploreScroll, ::search, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, { exploreTracks = it })
                                 else -> DiscoveryHome(discoveryFeed, discoveryScroll, likedArtists.toList(), current,
                                     com.nazcarbon.music.data.ListeningProfile.seeds(current, recentListening, likedIds.mapNotNull { knownTracks[it] }, playlists),
-                                    recommendationRegion, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying, ::openPlayer)
+                                    recommendationRegion, likedIds, ::play, ::toggleLike, ::startRadio, ::choosePlaylist, isPlaying, ::openPlayer,
+                                    homeRefreshRequest, homeRefreshRequest != homeRefreshHandled,
+                                    { homeRefreshHandled = it }, { homeRefreshRequest++ })
                             }
                             }
                         }
@@ -1200,7 +1204,17 @@ class MainActivity : ComponentActivity() {
                                         { mediaPlayer?.let { player -> if (player.isPlaying) player.pause() else player.play() } },
                                         ::closePlayback, { skipTrack(-1) }, { skipTrack(1) }, mediaPlayer?.hasNextMediaItem() == true)
                                 }
-                                NavigationDock(page) { if (it == "Search") { if (page != "Search") search("") } else page = it }
+                                NavigationDock(page) { destination ->
+                                    when (destination) {
+                                        "Search" -> if (page != "Search") search("")
+                                        "Home" -> {
+                                            selectedTracks = emptyList()
+                                            homeRefreshRequest++
+                                            page = "Home"
+                                        }
+                                        else -> page = destination
+                                    }
+                                }
                             }
                         }
                     }
@@ -2065,7 +2079,8 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     }
                 }
             }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().trackSwipe(track.id, hasNext, previous, next),
+                verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
@@ -2088,29 +2103,31 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     }
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { feedback(onShuffle) }) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) PipesPalette.Cyan else Ink) }
-                    IconButton(onClick = { feedback(previous) }) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(24.dp)) }
-                    CarbonPlayButton(playing, buffering, toggle)
-                    IconButton(onClick = { feedback(next) }, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(24.dp)) }
-                    IconButton(onClick = { feedback(onRepeat) }) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
-                        "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
-                        tint = if (repeat != Player.REPEAT_MODE_OFF) PipesPalette.Cyan else Ink) }
-                }
-                Spacer(Modifier.height(16.dp))
-                HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Ink.copy(alpha = .08f))
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TextButton(onClick = { feedback(onRadio) }, modifier = Modifier.weight(1f), enabled = !radioLoading && !com.nazcarbon.music.data.OfflinePlayback.isLocal(track)) {
-                        Icon(Icons.Default.Radio, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
+                Column(Modifier.fillMaxWidth().trackSwipe(track.id, hasNext, previous, next)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { feedback(onShuffle) }) { Icon(Icons.Default.Shuffle, if (shuffle) "Disable shuffle" else "Enable shuffle", tint = if (shuffle) PipesPalette.Cyan else Ink) }
+                        IconButton(onClick = { feedback(previous) }) { Icon(Icons.Default.SkipPrevious, "Previous song", tint = Ink, modifier = Modifier.size(24.dp)) }
+                        CarbonPlayButton(playing, buffering, toggle)
+                        IconButton(onClick = { feedback(next) }, enabled = hasNext) { Icon(Icons.Default.SkipNext, "Next song", tint = if (hasNext) Ink else Muted.copy(alpha = 0.35f), modifier = Modifier.size(24.dp)) }
+                        IconButton(onClick = { feedback(onRepeat) }) { Icon(if (repeat == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                            "Repeat: ${when (repeat) { Player.REPEAT_MODE_ONE -> "one song"; Player.REPEAT_MODE_ALL -> "all songs"; else -> "off" }}",
+                            tint = if (repeat != Player.REPEAT_MODE_OFF) PipesPalette.Cyan else Ink) }
                     }
-                    TextButton(onClick = { feedback(onQueue) }, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.QueueMusic, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
-                    }
-                    IconButton(onClick = { feedback(onDownload) }) {
-                        DownloadStatusIcon(track)
-                    }
-                    IconButton(onClick = { feedback(onSave) }) {
-                        Icon(Icons.Default.PlaylistAdd, "Add to playlist or album", tint = Muted, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.height(16.dp))
+                    HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = Ink.copy(alpha = .08f))
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        TextButton(onClick = { feedback(onRadio) }, modifier = Modifier.weight(1f), enabled = !radioLoading && !com.nazcarbon.music.data.OfflinePlayback.isLocal(track)) {
+                            Icon(Icons.Default.Radio, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Radio")
+                        }
+                        TextButton(onClick = { feedback(onQueue) }, modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.QueueMusic, null, Modifier.size(24.dp)); Spacer(Modifier.width(8.dp)); Text("Queue · $queueCount")
+                        }
+                        IconButton(onClick = { feedback(onDownload) }) {
+                            DownloadStatusIcon(track)
+                        }
+                        IconButton(onClick = { feedback(onSave) }) {
+                            Icon(Icons.Default.PlaylistAdd, "Add to playlist or album", tint = Muted, modifier = Modifier.size(24.dp))
+                        }
                     }
                 }
             }
@@ -2131,13 +2148,13 @@ private fun DiscoveryHome(
     onPlay: (MusicTrack) -> Unit, onLike: (MusicTrack) -> Unit,
     onRadio: (MusicTrack) -> Unit, onSave: (MusicTrack) -> Unit,
     playing: Boolean, onOpenPlayer: () -> Unit,
+    refreshRequest: Int, refreshRequested: Boolean, onRefreshHandled: (Int) -> Unit, onRefresh: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var tracks by remember { mutableStateOf(feed.snapshot()) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var exhausted by remember { mutableStateOf(false) }
-    var refreshToken by remember { mutableIntStateOf(0) }
     val latestArtists by rememberUpdatedState(artists)
     val latestSeeds by rememberUpdatedState(seeds)
     val latestRegion by rememberUpdatedState(region)
@@ -2155,14 +2172,18 @@ private fun DiscoveryHome(
             finally { loading = false }
         }
     }
-    LaunchedEffect(seeds.map { it.pageUrl }, artists, region, refreshToken) {
+    LaunchedEffect(seeds.map { it.pageUrl }, artists, region, refreshRequest) {
         while (loading) delay(100)
         loading = true
         exhausted = false
         error = null
         try {
-            withContext(Dispatchers.IO) { feed.refresh(latestSeeds, latestArtists, latestRegion) }
+            if (refreshRequested) list.scrollToItem(0)
+            withContext(Dispatchers.IO) {
+                feed.refresh(latestSeeds, latestArtists, latestRegion, replacePage = refreshRequested)
+            }
             tracks = feed.snapshot()
+            if (refreshRequested) onRefreshHandled(refreshRequest)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Couldn't refresh discovery. Tap to try again." }
         finally { loading = false }
@@ -2183,12 +2204,12 @@ private fun DiscoveryHome(
                 Row(Modifier.fillMaxWidth().padding(top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(current?.let { "TUNED TO ${it.artist.uppercase()}" } ?: if (seeds.isNotEmpty() || artists.isNotEmpty()) "FROM YOUR LISTENING & LIBRARY" else "A NEW FREQUENCY", color = Muted, fontSize = 10.sp,
                         letterSpacing = 1.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { refreshToken++ }, enabled = !loading) { Text("Refresh ↗", color = Ink) }
+                    TextButton(onClick = onRefresh, enabled = !loading) { Text("Refresh ↗", color = Ink) }
                 }
             }
         }
         if (tracks.isNotEmpty() || current != null) item(key = "discovery-feature") {
-            FeaturedMusicCarousel(tracks, current, playing, onPlay, onOpenPlayer)
+            FeaturedMusicCarousel(tracks, current, playing, onPlay, onOpenPlayer, onLike, onRadio, onSave)
         }
         items(tracks.drop(1).chunked(2), key = { "discovery-pair:${it.first().id}" }) { pair ->
             Row(Modifier.padding(horizontal = PipesSpace.Page).padding(bottom = PipesSpace.Page),
@@ -2203,7 +2224,7 @@ private fun DiscoveryHome(
             Box(Modifier.fillMaxWidth().padding(PipesSpace.Page), contentAlignment = Alignment.Center) {
                 when {
                     loading -> PipesLoading(Modifier.size(36.dp))
-                    error != null -> TextButton(onClick = { loadMore() }) { Text(error!!, color = Accent) }
+                    error != null -> TextButton(onClick = if (refreshRequested) onRefresh else ::loadMore) { Text(error!!, color = Accent) }
                     exhausted -> TextButton(onClick = { exhausted = false; loadMore() }) { Text("Explore another wave", color = Accent) }
                 }
             }

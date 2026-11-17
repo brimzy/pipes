@@ -16,7 +16,12 @@ class DiscoveryFeed(
     fun snapshot(): List<MusicTrack> = seen
 
     @Synchronized
-    fun refresh(seeds: List<MusicTrack>, artists: List<String>, region: String = "AUTO"): List<MusicTrack> {
+    fun refresh(
+        seeds: List<MusicTrack>,
+        artists: List<String>,
+        region: String = "AUTO",
+        replacePage: Boolean = false,
+    ): List<MusicTrack> {
         val signature = listOf(region) + seeds.map { it.pageUrl } + artists.map { it.trim().lowercase() }.sorted()
         if (signature != profile) {
             profile = signature
@@ -24,11 +29,16 @@ class DiscoveryFeed(
             visitedSeeds.clear()
             queryIndex = 0
         } else seeds.firstOrNull()?.let { visitedSeeds.remove(it.pageUrl) }
-        return next(seeds, artists, region)
+        return loadNext(seeds, artists, region, replacePage)
     }
 
     @Synchronized
-    fun next(seeds: List<MusicTrack>, artists: List<String>, region: String = "AUTO"): List<MusicTrack> {
+    fun next(seeds: List<MusicTrack>, artists: List<String>, region: String = "AUTO"): List<MusicTrack> =
+        loadNext(seeds, artists, region, replacePage = false)
+
+    private fun loadNext(
+        seeds: List<MusicTrack>, artists: List<String>, region: String, replacePage: Boolean,
+    ): List<MusicTrack> {
         val batch = mutableListOf<MusicTrack>()
         var lastFailure: Exception? = null
         val availableSeeds = seeds.filterNot { it.pageUrl in visitedSeeds }.take(3)
@@ -56,7 +66,9 @@ class DiscoveryFeed(
         }
         if (batch.isEmpty() && lastFailure != null) throw lastFailure
         // New pages are deduplicated against the full session, including alternate uploads.
-        seen = (seen + batch).distinctBy { it.pageUrl }
+        if (batch.isNotEmpty()) {
+            seen = (if (replacePage) batch else seen + batch).distinctBy { it.pageUrl }
+        }
         return batch
     }
 }

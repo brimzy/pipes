@@ -59,7 +59,7 @@ private val tutorialLessons = listOf(
     ), Icons.Default.PlayArrow, "Try the player", TutorialDestination.PLAYER),
     TutorialLesson("Decide what plays next", "The queue is for this listening session. Radio keeps it growing.", listOf(
         "Open the song menu" to "Use the three-dot Song actions button on a song row or artwork card. Play next puts a song immediately after the current one; Add to queue puts it at the end.",
-        "A useful swipe" to "Swipe a song row right to add it to the queue. Swipe left to remove an upcoming entry. The mini-player uses swipes to change songs instead.",
+        "A useful swipe" to "Swipe a song left to add it to the queue, or farther left to play it next. Swipe right to remove it from the upcoming queue. Swipe across the player controls to change songs.",
         "See the order" to "Open Queue in the full player to see what's playing and what's next. Only upcoming entries can be removed. With nothing playing, Play next starts the song.",
         "Start radio" to "Choose Radio on an online song to keep related recordings coming. Starting radio on the current song keeps its playback position. Radio needs an online source.",
     ), Icons.Default.QueueMusic, "Try the queue", TutorialDestination.QUEUE),

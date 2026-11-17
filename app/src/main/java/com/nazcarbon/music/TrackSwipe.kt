@@ -29,7 +29,7 @@ internal fun Modifier.trackSwipe(key: String, hasNext: Boolean, previous: () -> 
     val latestPrevious by rememberUpdatedState(previous)
     val latestNext by rememberUpdatedState(next)
     val latestHasNext by rememberUpdatedState(hasNext)
-    val offset by animateFloatAsState(drag * .25f, spring(.85f, 500f), label = "mini track swipe")
+    val offset by animateFloatAsState(drag * .25f, spring(.85f, 500f), label = "track swipe")
     this.graphicsLayer { translationX = offset }.semantics {
         customActions = listOfNotNull(
             CustomAccessibilityAction("Previous song") { latestPrevious(); true },

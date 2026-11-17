@@ -61,6 +61,27 @@ class DiscoveryFeedTest {
         assertEquals(listOf("good"), feed.refresh(listOf(song("unavailable"), song("available")), emptyList()).map { it.id })
     }
 
+    @Test fun `explicit home refresh replaces the recommendations with new songs`() {
+        var results = listOf(song("first"))
+        val feed = DiscoveryFeed({ _, _ -> results }, { results })
+        val seeds = listOf(song("seed"))
+        feed.refresh(seeds, emptyList())
+        results = listOf(song("first"), song("second"))
+
+        feed.refresh(seeds, emptyList(), replacePage = true)
+
+        assertEquals(listOf("second"), feed.snapshot().map { it.id })
+    }
+
+    @Test fun `explicit home refresh keeps the visible songs when no fresh songs are found`() {
+        val feed = DiscoveryFeed({ _, _ -> listOf(song("first")) }, { listOf(song("first")) })
+        val seeds = listOf(song("seed"))
+        feed.refresh(seeds, emptyList())
+
+        assertTrue(feed.refresh(seeds, emptyList(), replacePage = true).isEmpty())
+        assertEquals(listOf("first"), feed.snapshot().map { it.id })
+    }
+
     @Test fun `history persists original identities without storing stream credentials`() {
         val history = (0..110).map { song("$it") }
         val latest = song("50").copy(streamUrl = "https://temporary-stream")
