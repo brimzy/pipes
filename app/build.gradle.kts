@@ -64,6 +64,7 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    implementation("org.snakeyaml:snakeyaml-engine:2.9")
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-gif:2.7.0")
     implementation("androidx.media3:media3-exoplayer:1.8.0")

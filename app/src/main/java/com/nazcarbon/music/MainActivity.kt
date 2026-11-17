@@ -15,6 +15,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.SystemBarStyle
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
@@ -1073,6 +1075,7 @@ class MainActivity : ComponentActivity() {
                                     radioLoading,
                                     queueTracks.size,
                                     position, duration, seekable, buffering, audioQuality,
+                                    { id -> mediaPlayer?.takeIf { it.currentMediaItem?.mediaId == id }?.currentPosition },
                                     { mediaPlayer?.seekTo(it) },
                                     shuffle, { mediaPlayer?.sendCustomCommand(SessionCommand("pipes.toggle_shuffle", Bundle.EMPTY), Bundle.EMPTY) },
                                     repeat, { mediaPlayer?.repeatMode = (repeat + 1) % 3 },
@@ -2008,6 +2011,7 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     seekable: Boolean,
     buffering: Boolean,
     audioQuality: String,
+    readPosition: (String) -> Long?,
     onSeek: (Long) -> Unit,
     shuffle: Boolean,
     onShuffle: () -> Unit,
@@ -2022,8 +2026,10 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
     hasNext: Boolean,
     onDownload: () -> Unit,
 ) {
-    var showLyrics by remember { mutableStateOf(false) }
-    BackHandler(showLyrics) { showLyrics = false }
+    val pager = rememberPagerState { 2 }
+    val scope = rememberCoroutineScope()
+    val showLyrics = pager.currentPage == 1
+    BackHandler(showLyrics) { scope.launch { pager.animateScrollToPage(0) } }
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     fun feedback(action: () -> Unit) {
         haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
@@ -2043,13 +2049,20 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                 }
                 IconButton(onClick = { feedback(onStop) }) { Icon(Icons.Default.Close, "Stop playback and close player", tint = Ink) }
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()
-                .padding(vertical = if (compact) 8.dp else 12.dp), contentAlignment = Alignment.Center) {
-                val artworkSize = minOf(maxWidth, maxHeight, 380.dp).coerceAtLeast(0.dp)
-                if (showLyrics) {
-                    key(track.id) { PlayerLyrics(track, duration, position, onSeek.takeIf { seekable }) }
-                } else if (artworkSize > 0.dp) {
-                    SwipeArtwork(track, Modifier.size(artworkSize), previous, next, hasNext)
+            HorizontalPager(
+                state = pager,
+                modifier = Modifier.weight(1f).fillMaxWidth()
+                    .padding(vertical = if (compact) 8.dp else 12.dp),
+            ) { panel ->
+                if (panel == 0) {
+                    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        val artworkSize = minOf(maxWidth, maxHeight, 380.dp).coerceAtLeast(0.dp)
+                        if (artworkSize > 0.dp) PlayerArtwork(track, Modifier.size(artworkSize))
+                    }
+                } else if (pager.currentPage == 1 || pager.targetPage == 1) {
+                    key(track.id) {
+                        PlayerLyrics(track, duration, position, playing, readPosition, onSeek.takeIf { seekable })
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -2057,7 +2070,9 @@ private fun isSingleRelease(release: ArtistRelease): Boolean =
                     Text(track.title, color = PipesPalette.SongTitle, fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold, maxLines = if (compact) 1 else 2, overflow = TextOverflow.Ellipsis)
                     Text(track.artist, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp).clickable { onArtist() })
                 }
-                TextButton(onClick = { feedback { showLyrics = !showLyrics } }) {
+                TextButton(onClick = {
+                    feedback { scope.launch { pager.animateScrollToPage(if (showLyrics) 0 else 1) } }
+                }) {
                     Text(if (showLyrics) "Artwork" else "Lyrics", color = if (showLyrics) PipesPalette.Cyan else Ink)
                 }
                 IconButton(onClick = { feedback(onLike) }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
